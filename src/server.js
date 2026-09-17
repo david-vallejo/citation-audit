@@ -497,8 +497,14 @@ document.addEventListener('keydown', function (e) {
 });
 </script>`;
 
-function clientPage(slug) {
+function clientPage(slug, watching = null) {
   const client = getClient(slug);
+  const live = [...jobs.values()].filter(j => j.slug === slug && !j.done);
+  const liveBanner = live.length
+    ? `<div class="notice warn"><b><span class="badge working">working</span> ${esc({ canonical: 'Reading the source of truth', discover: 'Finding profiles', audit: 'Auditing profiles', report: 'Building the report', firstrun: 'Setting up this client' }[live[0].kind] || live[0].kind)}</b><div class="detail">This page does not update on its own. ${link(`/job/${live[0].id}`, 'Watch the progress')} or reload in a minute.</div></div>`
+    : watching && jobs.get(watching)?.done && !jobs.get(watching).error
+      ? `<div class="notice ok"><button class="x" onclick="this.parentNode.remove()" title="Dismiss" aria-label="Dismiss">&times;</button><b>Finished</b><div class="detail">${esc(jobs.get(watching).log.slice(-1)[0] || '')}</div></div>`
+      : '';
   const canon = getCanonical(client.id);
   const inv = inventory(client.id);
   const runs = all('SELECT * FROM audit_runs WHERE client_id = ? ORDER BY started_at DESC', [client.id]);
@@ -506,7 +512,7 @@ function clientPage(slug) {
   const isBusy = busy(slug);
   const active = inv.filter(c => c.status === 'active').length;
   const dis = isBusy ? 'disabled' : '';
-  return layout(client.name, `<h1>${esc(client.name)} <span class="muted small">${esc(slug)}</span></h1>
+  return layout(client.name, `${liveBanner}<h1>${esc(client.name)} <span class="muted small">${esc(slug)}</span></h1>
 <div class="card"><div class="actions">
 <form method="post" action="/client/${slug}/canonical/refresh" class="inline"><button ${dis}>Refresh canonical facts</button></form>
 <form method="post" action="/client/${slug}/discover" class="inline"><button ${dis} class="${active ? 'secondary' : ''}">Discover profiles</button></form>
@@ -605,12 +611,15 @@ function jobPage(id) {
     : '';
   const running = !j.done;
   return layout(`${j.kind} job`, `${errBox}<h1>${esc(j.kind === 'canonical' ? 'Reading the source of truth' : j.kind === 'discover' ? 'Finding profiles' : j.kind === 'audit' ? 'Auditing profiles' : j.kind === 'firstrun' ? 'Setting up' : 'Building the report')} for ${link(`/client/${j.slug}`, j.slug)} ${j.done ? (j.error ? '<span class="badge conflict">failed</span>' : '<span class="badge consistent">done</span>') : '<span class="badge working">working <span id="elapsed"></span></span>'}</h1>
-${running ? '<p class="muted small">Reading a page with Claude takes 10 to 30 seconds each. You will be taken to the results automatically when it finishes.</p>' : ''}
+${running ? `<p class="muted small">Reading a page with Claude takes 10 to 30 seconds each. This keeps running if you leave, and you will be sent back to ${esc(j.slug)} in a moment. <a href="/client/${esc(j.slug)}?watching=${esc(id)}">Go now.</a></p>` : ''}
 <pre class="log${running ? ' live' : ''}" id="log">${esc(j.log.join('\n'))}</pre>${manual}
 <script>
 (function () {
   var done = ${j.done}, dest = ${destination ? JSON.stringify(destination) : 'null'};
   if (done) { if (dest) setTimeout(function () { location.href = dest; }, 700); return; }
+  // Nobody should have to watch a log. After a few seconds, hand the page back and
+  // let the work carry on; the client page shows it is still running.
+  setTimeout(function () { location.href = '/client/${j.slug}?watching=${id}'; }, 10000);
   var log = document.getElementById('log'), el = document.getElementById('elapsed');
   var started = ${JSON.stringify(j.started)};
   var t0 = Date.parse(started) || Date.now();
@@ -704,14 +713,29 @@ async function handle(req, res, body) {
     }
     if ((mm = p.match(/^\/client\/([\w-]+)$/))) {
       if (!get('SELECT id FROM clients WHERE slug = ?', [mm[1]])) return html(notFoundPage(`There is no client called "${mm[1]}".`), 404);
-      return html(clientPage(mm[1]));
+      return html(clientPage(mm[1], url.searchParams.get('watching')));
     }
     if ((mm = p.match(/^\/run\/([\w-]+)$/))) { const pg = runPage(mm[1], url.searchParams.get('filter') || 'qa'); return pg ? html(pg) : html(notFoundPage('That audit run no longer exists.'), 404); }
     if ((mm = p.match(/^\/citation\/([\w-]+)$/))) { const pg = citationPage(mm[1], url.searchParams.get('run')); return pg ? html(pg) : html(notFoundPage('That profile is no longer in the inventory.'), 404); }
     if ((mm = p.match(/^\/job\/([\w-]+)\/log$/))) { const j = jobs.get(mm[1]); return j ? json({ log: j.log, done: j.done, error: j.error }) : json({ log: ['unknown job'], done: true }); }
     if ((mm = p.match(/^\/job\/([\w-]+)$/))) { const pg = jobPage(mm[1]); return pg ? html(pg) : html(notFoundPage('That job is no longer in memory, which usually means the server restarted.'), 404); }
     if (p === '/db/download') { getDb().exec('PRAGMA wal_checkpoint(TRUNCATE)'); res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Disposition': 'attachment; filename="citation-audit.sqlite"' }); return res.end(readFileSync(config.dbPath)); }
-    if (p === '/health') return json({ ok: true, commit: (process.env.RENDER_GIT_COMMIT || 'local').slice(0, 7), model: config.model, started: STARTED });
+    // Booleans only, never values: this endpoint is public so the health check can reach it.
+    if (p === '/health') return json({
+      ok: true,
+      commit: (process.env.RENDER_GIT_COMMIT || 'local').slice(0, 7),
+      model: config.model,
+      started: STARTED,
+      configured: {
+        claude: Boolean(config.anthropicKey),
+        search: Boolean(config.googleCse.key && config.googleCse.cx),
+        proxy: Boolean(config.fetchProxy.provider && config.fetchProxy.key),
+        places: Boolean(config.placesKey),
+        sheets: Boolean(config.serviceAccountJson),
+        backup: persistEnabled,
+        password: Boolean(PASSWORD),
+      },
+    });
     if (p === '/setup') return html(setupPage(null));
     if ((mm = p.match(/^\/run\/([\w-]+)\/file\/([\w.-]+)$/))) {
       const f = reportFile(mm[1], mm[2]);

@@ -14,7 +14,8 @@ function fromJsonLd(jsonld) {
 export async function scrapeWebsite(website, target, { log = console.log } = {}) {
   const base = new URL(/^https?:\/\//.test(website) ? website : `https://${website}`);
   const pages = [];
-  const home = await fetchPage(base.toString(), { allowFallbacks: true });
+  // A dated archive copy is the wrong source of truth, and chasing one costs a minute.
+  const home = await fetchPage(base.toString(), { allowFallbacks: true, skipArchive: true });
   if (home.method === 'blocked' || home.method === 'error') throw new Error(`Could not fetch ${base}: ${home.error}`);
   pages.push({ url: base.toString(), page: home });
   const links = new Set();

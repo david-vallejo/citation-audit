@@ -116,7 +116,7 @@ async function wayback(url) {
 const empty = (status, method, error) => ({ status, method, title: '', description: '', text: '', jsonld: [], error });
 
 // Returns { status, method: direct|proxy:*|reader|archive|blocked|error, title, description, text, jsonld, error?, archivedOn? }
-export async function fetchPage(url, { allowFallbacks = true } = {}) {
+export async function fetchPage(url, { allowFallbacks = true, skipArchive = false } = {}) {
   let first;
   try {
     const r = await direct(url);
@@ -125,7 +125,7 @@ export async function fetchPage(url, { allowFallbacks = true } = {}) {
   } catch (e) { first = { status: 0, error: e.message }; }
   if (!allowFallbacks) return empty(first.status, first.error ? 'error' : 'blocked', first.error || `HTTP ${first.status}`);
   const tried = [first.error ? `direct: ${first.error}` : `direct: HTTP ${first.status}`];
-  for (const layer of [proxy, reader, wayback]) {
+  for (const layer of (skipArchive ? [proxy, reader] : [proxy, reader, wayback])) {
     try { const r = await layer(url); if (r) return r; }
     catch (e) { tried.push(`${layer.name}: ${e.message}`); }
   }
