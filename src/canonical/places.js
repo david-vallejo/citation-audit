@@ -7,10 +7,12 @@ const headers = () => {
   return { 'Content-Type': 'application/json', 'X-Goog-Api-Key': config.placesKey };
 };
 
-export async function searchPlaces(textQuery) {
+export async function searchPlaces(textQuery, bias = null) {
+  const body = { textQuery, maxResultCount: 5 };
+  if (bias) body.locationBias = { circle: { center: { latitude: bias.lat, longitude: bias.lng }, radius: 2000 } };
   const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
     method: 'POST', headers: { ...headers(), 'X-Goog-FieldMask': FIELDS.split(',').map(f => `places.${f}`).join(',') },
-    body: JSON.stringify({ textQuery, maxResultCount: 5 }),
+    body: JSON.stringify(body),
   });
   const j = await res.json();
   if (!res.ok) throw new Error(`Places searchText ${res.status}: ${j.error?.message || 'error'}`);
@@ -61,4 +63,41 @@ export function toCanonical(p) {
     maps_url: p.googleMapsUri,
     status: p.businessStatus,
   };
+}
+
+// Accepts whatever someone can copy off Google: a Maps link, a share link, a
+// "place_id:" URL, a raw Place ID, or just the business name and city.
+// Returns { placeId } when an exact id is recoverable, else { query } to search.
+export async function resolvePlaceInput(raw) {
+  const input = (raw || '').trim();
+  if (!input) throw new Error('Enter a Google Business Profile link, or the business name plus city and state');
+
+  // A bare Place ID (these always start with ChIJ / GhIJ / EefJ style prefixes).
+  if (/^[A-Za-z0-9_-]{25,}$/.test(input) && !input.includes('/') && !input.includes(' ')) return { placeId: input, via: 'place id' };
+
+  let url = input;
+  // Short share links (maps.app.goo.gl/…, goo.gl/maps/…) have to be expanded first.
+  if (/^https?:\/\/(maps\.app\.goo\.gl|goo\.gl|g\.co)\//i.test(url)) {
+    try {
+      const res = await fetch(url, { redirect: 'follow', headers: { 'User-Agent': 'Mozilla/5.0' } });
+      url = res.url || url;
+    } catch { /* fall through and parse what we were given */ }
+  }
+
+  if (/^https?:\/\//i.test(url)) {
+    const byId = url.match(/place_id[:=]([A-Za-z0-9_-]{25,})/);
+    if (byId) return { placeId: byId[1], via: 'link' };
+    // /maps/place/Business+Name/@lat,lng  → search by the name, narrowed by coordinates.
+    const byName = url.match(/\/maps\/place\/([^/@?#]+)/);
+    const at = url.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+    if (byName) {
+      const name = decodeURIComponent(byName[1].replace(/\+/g, ' ')).trim();
+      if (name) return { query: name, bias: at ? { lat: parseFloat(at[1]), lng: parseFloat(at[2]) } : null, via: 'link' };
+    }
+    const q = url.match(/[?&]q=([^&]+)/);
+    if (q) return { query: decodeURIComponent(q[1].replace(/\+/g, ' ')), via: 'link' };
+    throw new Error('That Google link does not contain a business. Open the business in Google Maps, copy the address bar, and paste that.');
+  }
+
+  return { query: input, via: 'name' };
 }

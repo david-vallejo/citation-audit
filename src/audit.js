@@ -1,6 +1,6 @@
 import { config } from './config.js';
 import { all, get, insert, update, uuid, now, getCanonical, setCanonical } from './db.js';
-import { placeDetails, searchPlaces } from './canonical/places.js';
+import { placeDetails, searchPlaces, resolvePlaceInput } from './canonical/places.js';
 import { scrapeWebsite } from './canonical/website.js';
 import { discover } from './discovery/index.js';
 import { fetchPage, mapLimit } from './fetch/page.js';
@@ -16,9 +16,16 @@ export function targetOf(client, canonical) {
 export async function refreshCanonical(client, { log = console.log, lookup = null, skipWebsite = false } = {}) {
   let gbp = null;
   if (lookup && !client.place_id) {
-    const hits = await searchPlaces(lookup);
-    if (!hits.length) throw new Error(`Places search found nothing for "${lookup}"`);
-    gbp = hits[0];
+    const resolved = await resolvePlaceInput(lookup);
+    if (resolved.placeId) {
+      log(`  resolved a Place ID from the ${resolved.via}`);
+      gbp = await placeDetails(resolved.placeId);
+    } else {
+      log(`  searching Google for "${resolved.query}"${resolved.bias ? ' near the coordinates in the link' : ''}`);
+      const hits = await searchPlaces(resolved.query, resolved.bias);
+      if (!hits.length) throw new Error(`Google found no business matching "${resolved.query}". Open it in Google Maps and paste the address bar instead.`);
+      gbp = hits[0];
+    }
     update('clients', client.id, { place_id: gbp.place_id, updated_at: now() });
     client.place_id = gbp.place_id;
     log(`  matched GBP: ${gbp.name} — ${gbp.formatted_address} (${gbp.place_id})`);

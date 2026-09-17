@@ -48,26 +48,207 @@ const table = (head, rows, cls = '') => `<table class="${cls}"><thead><tr>${head
 const fieldLabel = f => ({ name: 'Business Name', address: 'Address', phone: 'Phone', website: 'Website', hours: 'Hours', year_founded: 'Year Founded', services: 'Services', categories: 'Categories', email: 'Email' }[f] || f);
 
 const CSS = `
-:root{--bg:#f6f7f9;--card:#fff;--ink:#1c1f24;--muted:#6b7280;--line:#e5e7eb;--accent:#2563eb;--red:#b91c1c;--green:#15803d;--amber:#b45309}
-*{box-sizing:border-box}body{margin:0;font:14px/1.45 -apple-system,Segoe UI,Roboto,sans-serif;color:var(--ink);background:var(--bg)}
-header{background:#111827;color:#fff;padding:12px 24px;display:flex;gap:18px;align-items:center}header a{color:#fff;text-decoration:none}header .brand{font-weight:600}header .muted{color:#9ca3af}
-main{max-width:1280px;margin:0 auto;padding:20px 24px}h1{font-size:22px;margin:0 0 14px}h2{font-size:16px;margin:26px 0 10px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:16px;margin-bottom:16px}
-table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}th{background:#f3f4f6;font-weight:600;white-space:nowrap}
-td.wrap{max-width:360px;word-break:break-word}.muted{color:var(--muted)}.small{font-size:12px}
-.badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:600;background:#e5e7eb}.badge.conflict{background:#fee2e2;color:var(--red)}.badge.consistent{background:#dcfce7;color:var(--green)}.badge.unable_to_verify{background:#fef3c7;color:var(--amber)}.badge.dismissed{background:#e5e7eb;color:#374151}
-button,.btn{background:var(--accent);color:#fff;border:0;border-radius:6px;padding:7px 12px;font-size:13px;cursor:pointer;text-decoration:none;display:inline-block}button.secondary,.btn.secondary{background:#e5e7eb;color:var(--ink)}button.danger{background:var(--red)}button:disabled{opacity:.5;cursor:default}
-form.inline{display:inline}input,select,textarea{font:inherit;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px}input[type=text],input[type=url]{width:100%}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}label{display:block;font-size:12px;color:var(--muted);margin-bottom:3px}
-.actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.stat{font-size:26px;font-weight:600}.stat small{font-size:12px;color:var(--muted);font-weight:400;display:block}
-pre.log{background:#0b1020;color:#d1d5db;padding:14px;border-radius:8px;max-height:520px;overflow:auto;font-size:12px;white-space:pre-wrap}
-.qa form{display:flex;gap:4px;flex-wrap:wrap}.qa select,.qa input{font-size:12px;padding:4px 6px}.qa button{padding:4px 8px;font-size:12px}
-.tabs a{margin-right:14px;padding-bottom:4px}.tabs a.on{border-bottom:2px solid var(--accent);font-weight:600}
-.notice{position:relative;border:1px solid var(--line);border-left-width:4px;border-radius:8px;padding:12px 40px 12px 14px;margin:0 0 16px;background:var(--card)}
-.notice.error{border-left-color:var(--red);background:#fef2f2}.notice.warn{border-left-color:var(--amber);background:#fffbeb}.notice.ok{border-left-color:var(--green);background:#f0fdf4}
-.notice b{display:block;margin-bottom:2px}.notice .detail{font-size:12px;color:#374151;white-space:pre-wrap;word-break:break-word;max-height:220px;overflow:auto;margin-top:4px}
-.notice .x{position:absolute;top:6px;right:8px;background:none;border:0;font-size:18px;line-height:1;color:var(--muted);cursor:pointer;padding:2px 6px}
-.notice .x:hover{color:var(--ink)}
+:root{
+  --bg-core:#1b212a; --bg-mid:#151b23; --bg-edge:#0a0d11;
+  --panel:#121821; --panel-hi:#18212c; --panel-sunk:#0e141b;
+  --line:#22303c; --line-soft:#1a242e; --line-lit:#3f88b0;
+  --blue:#74d4ff; --blue-deep:#2e7fa8; --blue-glow:rgba(116,212,255,.16);
+  --ink:#ffffff; --muted:#b7c1cc; --faint:#79838f;
+  --ok:#5ce6a6; --warn:#f5c451; --bad:#ff7a8a;
+  --sans:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --r:3px;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0; min-height:100vh; color:var(--ink);
+  font:400 14px/1.5 var(--sans); letter-spacing:.005em;
+  background:var(--bg-edge);
+  background-image:radial-gradient(1250px 820px at 50% -12%, #232c38 0%, var(--bg-core) 26%, var(--bg-mid) 55%, var(--bg-edge) 100%);
+  background-attachment:fixed;
+}
+
+/* ---- status strip ---- */
+header{
+  display:flex; align-items:stretch; gap:0;
+  background:linear-gradient(180deg,rgba(18,24,33,.92),rgba(10,13,17,.92));
+  border-bottom:1px solid var(--line);
+  box-shadow:0 1px 0 var(--blue-glow), 0 12px 32px -24px #000;
+  backdrop-filter:blur(8px); position:sticky; top:0; z-index:20;
+}
+header > *{display:flex; align-items:center; padding:0 16px; white-space:nowrap}
+header > * + *{border-left:1px solid var(--line-soft)}
+header a{color:var(--muted); text-decoration:none}
+header a:hover{color:var(--blue)}
+header .brand{
+  color:var(--blue); font-weight:600; letter-spacing:-.01em; font-size:15px;
+  padding-left:22px; padding-right:18px;
+}
+header .brand:hover{color:var(--ink)}
+header .grow{flex:1; border-left:1px solid var(--line-soft); padding:0}
+header .read{font-family:var(--mono); font-size:11.5px; color:var(--faint); gap:5px; padding-top:11px; padding-bottom:11px}
+header .read b{color:var(--muted); font-weight:500}
+main{max-width:1340px; margin:0 auto; padding:26px 22px 72px}
+
+/* ---- type ---- */
+h1{font-size:23px; font-weight:600; letter-spacing:-.015em; margin:0 0 18px; color:var(--ink)}
+h1 a{color:var(--blue); text-decoration:none}
+h1 a:hover{text-decoration:underline}
+h2{font-size:13px; font-weight:600; color:var(--blue); margin:30px 0 10px; letter-spacing:.01em}
+a{color:var(--blue)}
+a:hover{color:#a6e4ff}
+.muted{color:var(--faint)}
+.small{font-size:12px}
+code{font-family:var(--mono); font-size:12.5px; color:var(--blue)}
+
+/* ---- panels: one lit edge, not a uniform box ---- */
+.card{
+  background:linear-gradient(180deg,var(--panel-hi),var(--panel));
+  border:1px solid var(--line); border-top-color:var(--blue-deep);
+  border-radius:var(--r); padding:16px 18px; margin-bottom:14px;
+  box-shadow:inset 0 1px 0 var(--blue-glow);
+}
+
+/* ---- tables carry the data ---- */
+table{width:100%; border-collapse:collapse; font-size:13px}
+th,td{text-align:left; padding:9px 10px; border-bottom:1px solid var(--line-soft); vertical-align:top}
+th{
+  background:var(--panel-sunk); color:var(--blue); font-weight:600; font-size:12px;
+  white-space:nowrap; border-bottom:1px solid var(--line); position:sticky; top:41px; z-index:2;
+}
+tbody tr:hover td{background:rgba(116,212,255,.035)}
+tbody tr:last-child td{border-bottom:0}
+td{color:var(--muted)}
+td b,td strong{color:var(--ink); font-weight:600}
+td.wrap,.wrap{max-width:380px; word-break:break-word}
+/* values read as instrument output */
+td a[href^="http"],.mono{font-family:var(--mono); font-size:12.5px}
+
+/* ---- signal indicators ---- */
+.badge{
+  display:inline-flex; align-items:center; gap:6px; padding:2px 9px 2px 7px;
+  border-radius:999px; font-size:11.5px; font-weight:500; line-height:1.7;
+  border:1px solid var(--line); color:var(--muted); background:var(--panel-sunk);
+}
+.badge::before{content:""; width:5px; height:5px; border-radius:50%; background:currentColor; flex:none}
+.badge.conflict{color:var(--bad); border-color:rgba(255,122,138,.4); background:rgba(255,122,138,.09)}
+.badge.consistent{color:var(--ok); border-color:rgba(92,230,166,.35); background:rgba(92,230,166,.08)}
+.badge.unable_to_verify{color:var(--warn); border-color:rgba(245,196,81,.35); background:rgba(245,196,81,.08)}
+.badge.dismissed{color:var(--faint)}
+
+/* ---- controls ---- */
+button,.btn{
+  font:500 13px var(--sans); cursor:pointer; border-radius:var(--r);
+  padding:7px 14px; text-decoration:none; display:inline-block;
+  color:#04121b; background:linear-gradient(180deg,#8adcff,var(--blue));
+  border:1px solid #96e0ff; box-shadow:0 0 0 1px rgba(116,212,255,.12), 0 6px 18px -12px var(--blue);
+}
+button:hover,.btn:hover{background:linear-gradient(180deg,#a6e6ff,#84daff); color:#04121b}
+button.secondary,.btn.secondary{
+  background:var(--panel-hi); color:var(--muted); border:1px solid var(--line); box-shadow:none;
+}
+button.secondary:hover,.btn.secondary:hover{color:var(--blue); border-color:var(--blue-deep); background:var(--panel-hi)}
+button.danger{background:linear-gradient(180deg,#ff97a3,#ff7a8a); border-color:#ffa3ad; color:#2a0508}
+button:disabled,.btn:disabled{opacity:.4; cursor:default; box-shadow:none}
+input,select,textarea{
+  font:400 13px var(--sans); color:var(--ink); background:var(--panel-sunk);
+  border:1px solid var(--line); border-radius:var(--r); padding:7px 9px;
+}
+input::placeholder{color:#5d6773}
+input:focus,select:focus,textarea:focus,button:focus-visible,a:focus-visible{
+  outline:2px solid var(--blue); outline-offset:1px; border-color:var(--blue-deep);
+}
+input[type=text],input[type=url],input[type=number]{width:100%}
+select{appearance:none; padding-right:26px;
+  background-image:linear-gradient(45deg,transparent 50%,var(--blue) 50%),linear-gradient(135deg,var(--blue) 50%,transparent 50%);
+  background-position:calc(100% - 14px) 14px,calc(100% - 9px) 14px; background-size:5px 5px,5px 5px; background-repeat:no-repeat;
+}
+label{display:block; font-size:11.5px; color:var(--faint); margin-bottom:4px}
+form.inline{display:inline}
+.actions{display:flex; flex-wrap:wrap; gap:9px; align-items:center}
+.grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:14px}
+.grid.readout{grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:18px}
+
+/* ---- the readout: the one loud moment ---- */
+.stat{
+  font-family:var(--mono); font-size:38px; font-weight:400; color:var(--blue);
+  line-height:1.05; letter-spacing:-.02em; padding-bottom:10px;
+  border-bottom:1px solid var(--line); font-variant-numeric:tabular-nums;
+}
+.stat small{
+  display:block; margin-top:8px; font-family:var(--sans); font-size:11.5px;
+  font-weight:400; color:var(--faint); letter-spacing:.01em;
+}
+
+/* ---- notices ---- */
+.notice{
+  position:relative; border:1px solid var(--line); border-left-width:2px; border-radius:var(--r);
+  padding:12px 42px 12px 15px; margin:0 0 16px; background:var(--panel);
+}
+.notice b{display:block; margin-bottom:2px; color:var(--ink); font-weight:600}
+.notice .detail{
+  font-family:var(--mono); font-size:11.5px; color:var(--muted); white-space:pre-wrap;
+  word-break:break-word; max-height:220px; overflow:auto; margin-top:6px;
+  padding-top:8px; border-top:1px solid var(--line-soft);
+}
+.notice.error{border-left-color:var(--bad); background:linear-gradient(90deg,rgba(255,122,138,.09),var(--panel) 40%)}
+.notice.error b{color:var(--bad)}
+.notice.warn{border-left-color:var(--warn); background:linear-gradient(90deg,rgba(245,196,81,.08),var(--panel) 40%)}
+.notice.warn b{color:var(--warn)}
+.notice.ok{border-left-color:var(--ok); background:linear-gradient(90deg,rgba(92,230,166,.08),var(--panel) 40%)}
+.notice.ok b{color:var(--ok)}
+.notice .x{
+  position:absolute; top:7px; right:9px; background:none; border:0; box-shadow:none;
+  font-size:17px; line-height:1; color:var(--faint); cursor:pointer; padding:3px 7px;
+}
+.notice .x:hover{color:var(--ink); background:none}
+
+/* ---- logs ---- */
+pre.log{
+  background:var(--panel-sunk); color:var(--muted); border:1px solid var(--line);
+  border-radius:var(--r); padding:14px 16px; max-height:520px; overflow:auto;
+  font-family:var(--mono); font-size:12px; line-height:1.65; white-space:pre-wrap; margin:0 0 14px;
+}
+
+/* ---- tabs ---- */
+.tabs{display:flex; gap:2px; border-bottom:1px solid var(--line); margin:22px 0 14px; padding:0}
+.tabs a{
+  padding:8px 14px; color:var(--faint); text-decoration:none; font-size:13px;
+  border:1px solid transparent; border-bottom:0; border-radius:var(--r) var(--r) 0 0; margin-bottom:-1px;
+}
+.tabs a:hover{color:var(--muted)}
+.tabs a.on{
+  color:var(--blue); font-weight:500; background:var(--panel-hi);
+  border-color:var(--line); border-top-color:var(--blue-deep);
+}
+
+/* ---- canonical table: view state vs edit state ---- */
+table.canon td:last-child{text-align:right; white-space:nowrap; width:1%}
+table.canon .edit{display:none}
+table.canon tr.editing .view{display:none}
+table.canon tr.editing .edit{display:flex; gap:6px; align-items:center; justify-content:flex-end; flex-wrap:nowrap}
+table.canon tr.editing td{background:rgba(116,212,255,.05)}
+table.canon .edit input[type=text]{width:100%; min-width:220px; font-family:var(--mono); font-size:12.5px}
+table.canon tr.editing td:nth-child(2){width:52%}
+td.nowrap,.nowrap{white-space:nowrap}
+
+/* ---- qa row controls ---- */
+.qa form{display:flex; gap:5px; flex-wrap:wrap; align-items:center}
+.qa select,.qa input{font-size:12px; padding:4px 7px}
+.qa select{padding-right:24px; background-position:calc(100% - 12px) 12px,calc(100% - 7px) 12px}
+.qa button{padding:4px 11px; font-size:12px}
+
+@media (max-width:820px){
+  header{flex-wrap:wrap}
+  header > *{padding:9px 13px}
+  header .grow{display:none}
+  main{padding:18px 15px 56px}
+  th{position:static}
+  td.wrap,.wrap{max-width:none}
+  .stat{font-size:30px}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important; transition:none!important}}
 `;
 
 function noticeHtml(f) {
@@ -83,8 +264,8 @@ export const setNotice = f => { pendingNotice = f || null; };
 function layout(title, body, { refresh } = {}) {
   const u = usageToday();
   const notice = pendingNotice; pendingNotice = null;
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)} · Citation Audit</title><meta name="viewport" content="width=device-width,initial-scale=1">${refresh ? `<meta http-equiv="refresh" content="${refresh}">` : ''}<style>${CSS}</style></head>
-<body><header><a class="brand" href="/">Citation Audit</a><a href="/setup" class="muted small">Setup check</a><span class="muted">NAP + key-fact consistency checker</span><span style="flex:1"></span><span class="muted small" title="Daily caps reset at midnight UTC">Claude today: ${u.calls}/${u.calls_limit} calls · $${u.cost.toFixed(3)}/$${u.cost_limit.toFixed(2)}</span><span class="muted small">discovery: ${esc(config.discoveryProvider)} · model: ${esc(config.model)} · output: ${config.serviceAccountJson ? 'Google Sheets' : 'CSV (no service account)'}${persistEnabled ? ' · db→GitHub' : ''}</span></header><main>${noticeHtml(notice)}${body}</main></body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)} — Citation Audit</title><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">${refresh ? `<meta http-equiv="refresh" content="${refresh}">` : ''}<style>${CSS}</style></head>
+<body><header><a class="brand" href="/">Citation Audit</a><a href="/setup" class="small">Setup check</a><span class="grow"></span><span class="read" title="Daily caps reset at midnight UTC">calls <b>${u.calls}/${u.calls_limit}</b></span><span class="read" title="Daily caps reset at midnight UTC">spend <b>$${u.cost.toFixed(3)}</b> of $${u.cost_limit.toFixed(2)}</span><span class="read">model <b>${esc(config.model)}</b></span><span class="read">search <b>${esc(config.discoveryProvider)}</b></span><span class="read">output <b>${config.serviceAccountJson ? 'Google Sheets' : 'CSV'}</b></span><span class="read">store <b>${persistEnabled ? 'GitHub' : 'ephemeral'}</b></span></header><main>${noticeHtml(notice)}${body}</main></body></html>`;
 }
 
 // ---------- pages ----------
@@ -93,26 +274,77 @@ function homePage() {
   const rows = clients.map(c => {
     const run = latestRun(c.id);
     const inv = get("SELECT COUNT(*) n FROM citations WHERE client_id = ? AND status = 'active'", [c.id]).n;
-    return [link(`/client/${c.slug}`, c.name), c.website ? ext(c.website, c.website.replace(/^https?:\/\//, '')) : '', String(inv), run ? `${link(`/run/${run.id}`, run.started_at.slice(0, 10))} · ${run.conflicts} conflict / ${run.unverified} unverified` : '<span class="muted">never</span>'];
+    return [link(`/client/${c.slug}`, c.name), c.website ? ext(c.website, c.website.replace(/^https?:\/\//, '')) : '', String(inv), run ? `${link(`/run/${run.id}`, run.started_at.slice(0, 10))}<div class="small muted">${run.conflicts} conflict, ${run.unverified} unverified</div>` : '<span class="muted">never</span>'];
   });
   const firstRun = !clients.length;
-  return layout('Clients', `${firstRun ? '<div class="card" style="border-color:var(--accent)"><b>First time here?</b> Run the <a href="/setup">setup check</a> to confirm your keys work, then add a client below. After adding one, use the buttons in order: refresh facts, discover, run audit.</div>' : ''}<h1>Clients</h1><div class="card">${table(['Client', 'Website', 'Known profiles', 'Last audit'], rows)}</div>
+  return layout('Clients', `${firstRun ? '<div class="card"><b>First time here?</b> Run the <a href="/setup">setup check</a> to confirm your keys work, then add a client below. After adding one, use the buttons in order: refresh facts, discover, run audit.</div>' : ''}<h1>Clients</h1><div class="card">${table(['Client', 'Website', 'Known profiles', 'Last audit'], rows)}</div>
 <h2>Add a client</h2><div class="card"><form method="post" action="/client/add"><div class="grid">
 <div><label>Slug (short id)</label><input type="text" name="slug" required placeholder="anvilfence"></div>
 <div><label>Business name</label><input type="text" name="name" required placeholder="Anvil Fence Co"></div>
 <div><label>Website</label><input type="url" name="website" placeholder="https://anvilfence.com"></div>
-<div><label>Google Business Profile lookup (name + city + state) — or a Place ID</label><input type="text" name="lookup" placeholder="Anvil Fence Tulsa OK"></div>
-</div><p class="actions"><button>Add client</button> <span class="muted small">Then click “Refresh canonical facts” on the client page. Places API key ${config.placesKey ? 'is set' : 'is NOT set — GBP lookup will be skipped'}.</span></p></form></div>`);
+<div><label>Google Business Profile</label><input type="text" name="lookup" placeholder="Paste the Google Maps link for the business"></div>
+</div><p class="actions"><button>Add client</button></p><p class="muted small">Open the business in Google Maps and paste the address bar. A share link or the business name plus city also works. ${config.placesKey ? '' : 'Google lookup is off until GOOGLE_PLACES_API_KEY is set, so you can type the facts in by hand instead.'}</p></form></div>`);
 }
 
 function canonicalTable(client, canon) {
   const fields = [...AUDIT_FIELDS, ...PHASE2_FIELDS];
-  return table(['Field', 'Canonical value', 'Source', 'Captured', 'Override'], fields.map(f => {
+  const hint = f => f === 'hours' ? 'Mon-Fri: 8am-5pm; Sat: Closed; Sun: Closed'
+    : f === 'address' ? 'Street, City, ST 12345'
+    : f === 'services' || f === 'categories' ? 'comma, separated'
+    : f === 'phone' ? '(208) 555-0123'
+    : f === 'year_founded' ? '1961'
+    : f === 'website' ? 'https://example.com' : '';
+  const head = ['Field', 'Value', 'Source', 'Captured', ''];
+  const rows = fields.map(f => {
     const c = canon[f];
-    return [fieldLabel(f), `<span class="wrap">${esc(displayCanonical(f, c?.value)) || '<span class="muted">—</span>'}</span>`, c ? (c.source_url ? ext(c.source_url, c.source) : esc(c.source)) : '', c ? esc(c.captured_at.slice(0, 10)) : '',
-      `<form method="post" action="/client/${client.slug}/canonical" class="inline"><input type="hidden" name="field" value="${f}"><input type="text" name="value" placeholder="${f === 'hours' ? 'Mon-Fri: 8am-5pm; Sat: Closed' : f === 'address' ? 'Street, City, ST 12345' : f === 'services' ? 'comma, separated' : ''}" style="width:240px"> <button class="secondary">Set</button>${c?.source === 'manual' ? ` <form method="post" action="/client/${client.slug}/canonical/clear" class="inline"><input type="hidden" name="field" value="${f}"><button class="secondary" title="Remove manual override">✕</button></form>` : ''}</form>`];
-  }));
+    const shown = displayCanonical(f, c?.value);
+    const setId = `set-${f}`, clearId = `clear-${f}`;
+    const value = `<span class="view wrap">${esc(shown) || '<span class="muted">Not set</span>'}</span>`
+      + `<form class="edit" id="${setId}" method="post" action="/client/${client.slug}/canonical">`
+      + `<input type="hidden" name="field" value="${f}">`
+      + `<input type="text" name="value" value="${esc(shown)}" placeholder="${esc(hint(f))}" aria-label="${esc(fieldLabel(f))}">`
+      + `</form>`;
+    const actions = `<button type="button" class="secondary view js-edit">Edit</button>`
+      + `<span class="edit actions">`
+      + `<button form="${setId}">Save</button>`
+      + `<button type="button" class="secondary js-cancel">Cancel</button>`
+      + (c?.source === 'manual' ? `<button form="${clearId}" class="secondary" title="Remove this manual value">Clear</button>` : '')
+      + `</span>`
+      + (c?.source === 'manual' ? `<form id="${clearId}" method="post" action="/client/${client.slug}/canonical/clear"><input type="hidden" name="field" value="${f}"></form>` : '');
+    return { f, cells: [fieldLabel(f), value, c ? (c.source_url ? ext(c.source_url, c.source) : esc(c.source)) : '', c ? `<span class="nowrap">${esc(c.captured_at.slice(0, 10))}</span>` : '', actions] };
+  });
+  return `<table class="canon"><thead><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>`
+    + rows.map(r => `<tr data-field="${r.f}">${r.cells.map(cell => `<td>${cell}</td>`).join('')}</tr>`).join('')
+    + `</tbody></table>`;
 }
+
+// One listener for the whole table: Edit reveals the input, Cancel restores the value.
+const CANON_JS = `<script>
+document.addEventListener('click', function (e) {
+  var edit = e.target.closest('.js-edit'), cancel = e.target.closest('.js-cancel');
+  if (!edit && !cancel) return;
+  var row = e.target.closest('tr');
+  if (!row) return;
+  if (edit) {
+    var open = row.closest('table').querySelector('tr.editing');
+    if (open && open !== row) { open.classList.remove('editing'); open.querySelector('.edit input[name=\"value\"]').value = open.dataset.original || ''; }
+    row.dataset.original = row.querySelector('.edit input[name=\"value\"]').value;
+    row.classList.add('editing');
+    var i = row.querySelector('.edit input[name=\"value\"]'); i.focus(); i.select();
+  } else {
+    row.querySelector('.edit input[name=\"value\"]').value = row.dataset.original || '';
+    row.classList.remove('editing');
+  }
+});
+document.addEventListener('keydown', function (e) {
+  if (e.key !== 'Escape') return;
+  var row = e.target.closest('tr.editing');
+  if (!row) return;
+  row.querySelector('.edit input[name=\"value\"]').value = row.dataset.original || '';
+  row.classList.remove('editing');
+  e.target.blur();
+});
+</script>`;
 
 function clientPage(slug) {
   const client = getClient(slug);
@@ -125,19 +357,19 @@ function clientPage(slug) {
   const dis = isBusy ? 'disabled' : '';
   return layout(client.name, `<h1>${esc(client.name)} <span class="muted small">${esc(slug)}</span></h1>
 <div class="card"><div class="actions">
-<form method="post" action="/client/${slug}/canonical/refresh" class="inline"><button ${dis}>1 · Refresh canonical facts</button></form>
-<form method="post" action="/client/${slug}/discover" class="inline"><button ${dis} class="${active ? 'secondary' : ''}">2 · Discover profiles</button></form>
-<form method="post" action="/client/${slug}/audit" class="inline"><button ${dis}>3 · Run audit${active ? ` (${active} stored profiles)` : ' (will discover first)'}</button> <label class="inline small" style="display:inline"><input type="checkbox" name="rediscover" value="1"> also re-discover</label> <input type="number" name="limit" placeholder="limit" style="width:70px"></form>
+<form method="post" action="/client/${slug}/canonical/refresh" class="inline"><button ${dis}>1. Refresh canonical facts</button></form>
+<form method="post" action="/client/${slug}/discover" class="inline"><button ${dis} class="${active ? 'secondary' : ''}">2. Discover profiles</button></form>
+<form method="post" action="/client/${slug}/audit" class="inline"><button ${dis}>3. Run audit${active ? ` (${active} stored profiles)` : ' (will discover first)'}</button> <label class="inline small" style="display:inline"><input type="checkbox" name="rediscover" value="1"> also re-discover</label> <input type="number" name="limit" placeholder="limit" style="width:70px"></form>
 ${isBusy ? '<span class="muted">a job is running — see below</span>' : ''}</div>
-<p class="muted small">Website: ${client.website ? ext(client.website) : '—'} · Place ID: ${esc(client.place_id || '—')} · Sheet: ${client.sheet_id ? ext(`https://docs.google.com/spreadsheets/d/${client.sheet_id}`, 'open') : '—'}</p>
-<form method="post" action="/client/${slug}/set" class="actions"><input type="url" name="website" placeholder="website" value="${esc(client.website || '')}" style="width:260px"><input type="text" name="place_id" placeholder="Place ID" value="${esc(client.place_id || '')}" style="width:260px"><input type="text" name="lookup" placeholder="or GBP lookup: Name City ST" style="width:220px"><button class="secondary">Save</button></form></div>
+<p class="muted small">Website ${client.website ? ext(client.website) : 'not set'}<br>Google Business Profile ${client.place_id ? ext(`https://www.google.com/maps/place/?q=place_id:${client.place_id}`, 'linked') : 'not linked'}<br>Sheet ${client.sheet_id ? ext(`https://docs.google.com/spreadsheets/d/${client.sheet_id}`, 'open') : 'not created yet'}</p>
+<form method="post" action="/client/${slug}/set" class="actions"><input type="url" name="website" placeholder="Website address" value="${esc(client.website || '')}" style="width:250px"><input type="text" name="lookup" placeholder="Google Business Profile link" style="width:320px"><button class="secondary">Save</button></form></div>
 
-<h2>Source of truth (GBP + website; manual overrides are sticky)</h2><div class="card">${canonicalTable(client, canon)}</div>
+<h2>Source of truth</h2><div class="card">${canonicalTable(client, canon)}<p class="muted small" style="margin:12px 0 0">Google Business Profile and the website fill this in. Anything you edit by hand wins and is never overwritten by a refresh.</p></div>${CANON_JS}
 
 <h2>Audit runs</h2><div class="card">${table(['Started', 'Mode', 'Profiles', 'Consistent', 'Conflicts', 'Unverified', 'Report'], runs.map(r => [link(`/run/${r.id}`, r.started_at.replace('T', ' ').slice(0, 16)), esc(r.mode), String(r.citations_total), String(r.consistent), String(r.conflicts), String(r.unverified), r.sheet_url ? (r.sheet_url.startsWith('http') ? ext(r.sheet_url, 'Google Sheet') : `<span class="small">${esc(r.sheet_url.replace(config.reportsDir, 'reports'))}</span>`) : (r.finished_at ? `<form method="post" action="/run/${r.id}/report" class="inline"><button class="secondary" ${dis}>Generate</button></form>` : '<span class="muted">running…</span>')]))}</div>
 
-<h2>Citation inventory <span class="muted small">(${inv.length} known · ${active} active · persisted, re-used on every run)</span></h2><div class="card">
-${table(['Directory', 'Profile URL', 'Status', 'Last result', 'Last audited', 'Found via', ''], inv.map(c => [esc(c.directory), `<span class="wrap">${ext(c.url)}</span>${c.notes ? `<div class="muted small">${esc(c.notes)}</div>` : ''}`, badge(c.status), c.last_result ? badge(c.last_result) : '', esc((c.last_audited_at || '').slice(0, 10)), `${esc(c.discovered_via)} <span class="muted">${esc(c.discovered_at.slice(0, 10))}</span>`,
+<h2>Citation inventory <span class="muted small">${inv.length} known, ${active} active, re-used on every run</span></h2><div class="card">
+${table(['Directory', 'Profile URL', 'Status', 'Last result', 'Last audited', 'Found via', ''], inv.map(c => [esc(c.directory), `<span class="wrap">${ext(c.url)}</span>${c.notes ? `<div class="muted small">${esc(c.notes)}</div>` : ''}`, badge(c.status), c.last_result ? badge(c.last_result) : '', `<span class="nowrap">${esc((c.last_audited_at || '').slice(0, 10))}</span>`, `<span class="nowrap">${esc(c.discovered_via)}</span> <span class="muted nowrap">${esc(c.discovered_at.slice(0, 10))}</span>`,
   `<form method="post" action="/citation/${c.id}/status" class="inline"><select name="status" onchange="this.form.submit()"><option ${c.status === 'active' ? 'selected' : ''} value="active">active</option><option ${c.status === 'ignored' ? 'selected' : ''} value="ignored">ignore</option><option ${c.status === 'not_client' ? 'selected' : ''} value="not_client">not this business</option><option ${c.status === 'dead' ? 'selected' : ''} value="dead">dead link</option></select></form>`]))}
 <form method="post" action="/client/${slug}/citation/add" class="actions" style="margin-top:10px"><input type="url" name="url" placeholder="Add a profile URL manually (https://www.yelp.com/biz/…)" style="width:480px" required><button class="secondary">Add</button></form></div>
 
@@ -152,12 +384,12 @@ function runPage(id, filter = 'qa') {
   const open = rows.filter(r => r.qa_open).length, conflicts = rows.filter(r => r.effective_status === 'conflict' && !r.qa_open).length;
   const shown = filter === 'qa' ? rows.filter(r => r.qa_open) : filter === 'conflicts' ? rows.filter(r => r.effective_status === 'conflict') : filter === 'action' ? rows.filter(r => r.effective_status === 'conflict' && !r.qa_open) : rows;
   const tab = (k, t) => `<a href="/run/${id}?filter=${k}" class="${filter === k ? 'on' : ''}">${t}</a>`;
-  const qaForm = r => `<div class="qa"><form method="post" action="/finding/${r.id}/qa"><select name="decision"><option value="confirm">Confirm as-is</option><option value="dismiss">Dismiss (not a real issue)</option><option value="correct">Correct status →</option></select><select name="corrected_status"><option value="conflict">conflict</option><option value="consistent">consistent</option><option value="unable_to_verify">unable to verify</option></select><input type="text" name="note" placeholder="note" style="width:140px"><button>Save</button></form>${r.decision ? `<div class="small muted">QA: ${esc(r.decision)}${r.corrected_status ? ` → ${esc(r.corrected_status)}` : ''}${r.qa_note ? ` — ${esc(r.qa_note)}` : ''}</div>` : ''}</div>`;
-  return layout(`Run ${id.slice(0, 8)}`, `<h1>${link(`/client/${client.slug}`, client.name)} · audit ${esc(run.started_at.replace('T', ' ').slice(0, 16))} <span class="muted small">${esc(run.mode)}</span></h1>
-<div class="card"><div class="grid"><div class="stat">${run.citations_total}<small>profiles audited</small></div><div class="stat" style="color:var(--green)">${run.consistent}<small>consistent</small></div><div class="stat" style="color:var(--red)">${run.conflicts}<small>with conflicts</small></div><div class="stat" style="color:var(--amber)">${run.unverified}<small>unable to verify</small></div><div class="stat">${open}<small>findings awaiting QA</small></div></div>
+  const qaForm = r => `<div class="qa"><form method="post" action="/finding/${r.id}/qa"><select name="decision"><option value="confirm">Confirm as-is</option><option value="dismiss">Dismiss (not a real issue)</option><option value="correct">Correct status to</option></select><select name="corrected_status"><option value="conflict">conflict</option><option value="consistent">consistent</option><option value="unable_to_verify">unable to verify</option></select><input type="text" name="note" placeholder="note" style="width:140px"><button>Save</button></form>${r.decision ? `<div class="small muted">QA: ${esc(r.decision)}${r.corrected_status ? ` → ${esc(r.corrected_status)}` : ''}${r.qa_note ? ` — ${esc(r.qa_note)}` : ''}</div>` : ''}</div>`;
+  return layout(`Run ${id.slice(0, 8)}`, `<h1>${link(`/client/${client.slug}`, client.name)}<span class="muted" style="font-weight:400"> audit ${esc(run.started_at.replace('T', ' ').slice(0, 16))}</span> <span class="badge">${esc(run.mode)}</span></h1>
+<div class="card"><div class="grid readout"><div class="stat">${run.citations_total}<small>profiles audited</small></div><div class="stat" style="color:var(--ok)">${run.consistent}<small>consistent</small></div><div class="stat" style="color:var(--bad)">${run.conflicts}<small>with conflicts</small></div><div class="stat" style="color:var(--warn)">${run.unverified}<small>unable to verify</small></div><div class="stat">${open}<small>findings awaiting QA</small></div></div>
 <p class="actions">${run.sheet_url ? (run.sheet_url.startsWith('http') ? ext(run.sheet_url, 'Open Google Sheet') : `<span class="small">CSV report: ${esc(run.sheet_url.replace(config.reportsDir, 'reports'))}</span>`) : ''} <form method="post" action="/run/${id}/report" class="inline"><button ${busy(client.slug) ? 'disabled' : ''}>${run.sheet_url ? 'Regenerate report' : 'Generate report'}</button></form> <span class="muted small">Client Action tab = ${conflicts} confirmed conflict(s). Findings still in QA are held back from the client tab.</span></p></div>
 <p class="tabs">${tab('qa', `QA queue (${open})`)}${tab('action', `Client action (${conflicts})`)}${tab('conflicts', 'All conflicts')}${tab('all', `All findings (${rows.length})`)}</p>
-<div class="card">${table(['Directory / URL', 'Field', 'Status', 'Conf.', 'Canonical', 'Found on profile', 'Reason', filter === 'action' ? 'Suggested correction' : 'QA'], shown.map(r => [`${esc(r.directory)}<div class="small wrap">${ext(r.url, r.url.replace(/^https?:\/\/(www\.)?/, '').slice(0, 60))}</div><div class="small">${link(`/citation/${r.citation_id}?run=${id}`, 'evidence')} · ${esc(r.fetch_method || '')}${r.http_status ? ` ${r.http_status}` : ''}</div>`, fieldLabel(r.field), `${badge(r.effective_status)}${r.effective_status !== r.status ? `<div class="small muted">raw: ${esc(r.status)}</div>` : ''}`, String(r.confidence), `<span class="wrap">${esc(r.expected)}</span>`, `<span class="wrap">${esc(r.found)}</span>`, `<span class="small">${esc(r.reason || '')}</span>`, filter === 'action' ? esc(suggestion(r)) : qaForm(r)]))}</div>`);
+<div class="card">${table(['Directory / URL', 'Field', 'Status', 'Conf.', 'Canonical', 'Found on profile', 'Reason', filter === 'action' ? 'Suggested correction' : 'QA'], shown.map(r => [`${esc(r.directory)}<div class="small wrap">${ext(r.url, r.url.replace(/^https?:\/\/(www\.)?/, '').slice(0, 60))}</div><div class="small">${link(`/citation/${r.citation_id}?run=${id}`, 'evidence')} <span class="muted">${esc(r.fetch_method || '')}${r.http_status ? ` ${r.http_status}` : ''}</span></div>`, fieldLabel(r.field), `${badge(r.effective_status)}${r.effective_status !== r.status ? `<div class="small muted">raw: ${esc(r.status)}</div>` : ''}`, String(r.confidence), `<span class="wrap">${esc(r.expected)}</span>`, `<span class="wrap">${esc(r.found)}</span>`, `<span class="small">${esc(r.reason || '')}</span>`, filter === 'action' ? esc(suggestion(r)) : qaForm(r)]))}</div>`);
 }
 
 function citationPage(id, runId) {
@@ -166,10 +398,10 @@ function citationPage(id, runId) {
   const snap = runId ? get('SELECT * FROM snapshots WHERE citation_id = ? AND run_id = ?', [id, runId]) : get('SELECT * FROM snapshots WHERE citation_id = ? ORDER BY fetched_at DESC LIMIT 1', [id]);
   const client = get('SELECT * FROM clients WHERE id = ?', [c.client_id]);
   const extracted = snap?.extracted_json ? JSON.parse(snap.extracted_json) : null;
-  return layout('Evidence', `<h1>Evidence · ${esc(c.directory)}</h1><div class="card"><p>${ext(c.url)}<br><span class="muted small">${link(`/client/${client.slug}`, client.name)} · discovered ${esc(c.discovered_at.slice(0, 10))} via ${esc(c.discovered_via)}${runId ? ` · ${link(`/run/${runId}`, 'back to run')}` : ''}</span></p>
-${snap ? `<p class="small">Fetched ${esc(snap.fetched_at)} · method <b>${esc(snap.fetch_method)}</b> · HTTP ${esc(snap.http_status ?? '–')} · extraction confidence ${esc(snap.extraction_confidence ?? '–')}${snap.error ? ` · <span style="color:var(--red)">${esc(snap.error)}</span>` : ''}</p>` : '<p class="muted">No snapshot yet.</p>'}</div>
-${extracted ? `<h2>Extracted by Claude</h2><div class="card"><pre class="log" style="background:#f3f4f6;color:#111">${esc(JSON.stringify(extracted, null, 2))}</pre></div>` : ''}
-${snap?.text_excerpt ? `<h2>Page text excerpt</h2><div class="card"><pre class="log" style="background:#f3f4f6;color:#111">${esc(snap.text_excerpt)}</pre></div>` : ''}`);
+  return layout('Evidence', `<h1>Evidence from ${esc(c.directory)}</h1><div class="card"><p>${ext(c.url)}<br><span class="muted small">${link(`/client/${client.slug}`, client.name)} · discovered ${esc(c.discovered_at.slice(0, 10))} via ${esc(c.discovered_via)}${runId ? ` &mdash; ${link(`/run/${runId}`, 'back to run')}` : ''}</span></p>
+${snap ? `<p class="small">Fetched ${esc(snap.fetched_at)}<br>method <b>${esc(snap.fetch_method)}</b>, HTTP ${esc(snap.http_status ?? 'n/a')}, extraction confidence ${esc(snap.extraction_confidence ?? 'n/a')}${snap.error ? ` · <span style="color:var(--bad)">${esc(snap.error)}</span>` : ''}</p>` : '<p class="muted">No snapshot yet.</p>'}</div>
+${extracted ? `<h2>Extracted by Claude</h2><div class="card"><pre class="log">${esc(JSON.stringify(extracted, null, 2))}</pre></div>` : ''}
+${snap?.text_excerpt ? `<h2>Page text excerpt</h2><div class="card"><pre class="log">${esc(snap.text_excerpt)}</pre></div>` : ''}`);
 }
 
 // Turn a raw job error into something a non-developer can act on.
@@ -181,7 +413,8 @@ function friendlyJobError(j) {
   if (/daily .* cap/i.test(m)) return 'The daily Claude limit was reached. Raise DAILY_CLAUDE_CALLS or DAILY_COST_LIMIT_USD, or wait for the reset at midnight UTC.';
   if (/GOOGLE_PLACES_API_KEY/i.test(m)) return 'The Google Places key is missing. Add GOOGLE_PLACES_API_KEY, or type the facts in by hand.';
   if (/Places (searchText|details)/i.test(m)) return 'Google Places rejected the request. Check that "Places API (New)" is enabled and the key has no referrer restriction.';
-  if (/found nothing/i.test(m)) return 'Google could not find that business. Try the full name plus city and state, or paste a Place ID instead.';
+  if (/found no business|found nothing/i.test(m)) return 'Google could not find that business. Open it in Google Maps and paste the address bar.';
+  if (/does not contain a business/i.test(m)) return 'That Google link has no business in it. Open the business in Google Maps and copy the address bar.';
   if (/Could not fetch/i.test(m)) return 'The website could not be read. Check the address, or enter the facts by hand.';
   if (/discovery provider/i.test(m)) return 'The search provider failed. Add GOOGLE_CSE_KEY and GOOGLE_CSE_CX for reliable discovery.';
   if (/Canonical facts incomplete/i.test(m)) return 'Set the canonical name and phone before running an audit.';
@@ -199,7 +432,7 @@ function jobPage(id) {
     else next = `<p><a class="btn" href="/client/${j.slug}">Back to client</a></p>`;
   }
   const errBox = j.error ? `<div class="notice error"><button class="x" onclick="this.parentNode.remove()" title="Dismiss" aria-label="Dismiss">&times;</button><b>${esc(friendlyJobError(j))}</b><div class="detail">${esc(j.error)}</div></div>` : '';
-  return layout(`${j.kind} job`, `${errBox}<h1>${esc(j.kind)} · ${link(`/client/${j.slug}`, j.slug)} ${j.done ? (j.error ? '<span class="badge conflict">failed</span>' : '<span class="badge consistent">done</span>') : '<span class="badge">running…</span>'}</h1>
+  return layout(`${j.kind} job`, `${errBox}<h1>${esc(j.kind)} job for ${link(`/client/${j.slug}`, j.slug)} ${j.done ? (j.error ? '<span class="badge conflict">failed</span>' : '<span class="badge consistent">done</span>') : '<span class="badge">running…</span>'}</h1>
 <pre class="log" id="log">${esc(j.log.join('\n'))}</pre>${next}
 <script>const done=${j.done};if(!done){const t=setInterval(async()=>{const r=await fetch('/job/${id}/log');const j=await r.json();document.getElementById('log').textContent=j.log.join('\\n');if(j.done){clearInterval(t);location.reload()}},1500)}</script>`);
 }
@@ -212,7 +445,7 @@ function setupPage(result) {
 <div class="card"><p class="muted small">Confirms each key actually works, including one real (about $0.001) Claude call. Run it after changing anything in Render → Environment.</p>
 <p class="actions"><form method="post" action="/setup/run" class="inline"><button>Run the check</button></form> <a class="btn secondary" href="/">Back to clients</a></p></div>
 ${result ? `<div class="card">${table(['', 'Check', 'Result'], rows)}
-<p class="small muted">${result.blocking ? `<b style="color:var(--red)">${result.blocking} blocking problem(s).</b> Items marked Optional can be left as they are.` : 'No blocking problems. You can add a client and run an audit.'}</p></div>` : ''}`);
+<p class="small muted">${result.blocking ? `<b style="color:var(--bad)">${result.blocking} blocking problem(s).</b> Items marked Optional can be left as they are.` : 'No blocking problems. You can add a client and run an audit.'}</p></div>` : ''}`);
 }
 
 // ---------- actions ----------
@@ -307,11 +540,10 @@ async function handle(req, res, body) {
       if (!slug) return bounce('/', 'error', 'A slug is required', rawSlug ? `"${rawSlug}" has no letters or numbers to use. A slug is a short id like "anvilfence".` : 'A slug is a short id like "anvilfence". It is only used in the URL.');
       if (get('SELECT id FROM clients WHERE slug = ?', [slug])) return bounce('/', 'error', `The slug "${slug}" is already taken`, 'Pick a different short id, or open the existing client from the list above.');
       if (f.website?.trim() && !/^https?:\/\/[^\s.]+\.[^\s]+$/i.test(f.website.trim())) return bounce('/', 'error', 'That website address does not look valid', `Received "${f.website.trim()}". Include the full address, for example https://anvilfence.com`);
-      const isPlaceId = /^ChIJ|^[A-Za-z0-9_-]{20,}$/.test(f.lookup || '');
-      insert('clients', { id: uuid(), slug, name: f.name.trim(), website: f.website?.trim() || null, place_id: isPlaceId ? f.lookup.trim() : null, sheet_id: null, created_at: now(), updated_at: now() });
+      insert('clients', { id: uuid(), slug, name: f.name.trim(), website: f.website?.trim() || null, place_id: null, sheet_id: null, created_at: now(), updated_at: now() });
       schedulePersist();
-      if (f.lookup && !isPlaceId) {
-        if (!config.placesKey) return bounce(`/client/${slug}`, 'warn', 'Client added, but the Google lookup was skipped', 'GOOGLE_PLACES_API_KEY is not set, so the business could not be looked up. Enter the name, address and phone by hand in the table below, or add the key and use "Refresh canonical facts".');
+      if (f.lookup?.trim()) {
+        if (!config.placesKey) return bounce(`/client/${slug}`, 'warn', 'Client added, but the Google lookup was skipped', 'GOOGLE_PLACES_API_KEY is not set, so the Google Business Profile could not be read. Type the name, address and phone into the Override column below, which works just as well.');
         const client = getClient(slug);
         const j = startJob('canonical', slug, log => refreshCanonical(client, { log, lookup: f.lookup.trim() }));
         return redirect(`/job/${j.id}`);
@@ -321,10 +553,15 @@ async function handle(req, res, body) {
     if ((mm = p.match(/^\/client\/([\w-]+)\/set$/))) {
       const client = getClient(mm[1]);
       if (f.website?.trim() && !/^https?:\/\/[^\s.]+\.[^\s]+$/i.test(f.website.trim())) return bounce(`/client/${client.slug}`, 'error', 'That website address does not look valid', `Received "${f.website.trim()}". Include the full address, for example https://anvilfence.com`);
-      update('clients', client.id, { website: f.website?.trim() || null, place_id: f.place_id?.trim() || null, updated_at: now() });
+      update('clients', client.id, { website: f.website?.trim() || null, updated_at: now() });
       schedulePersist();
-      if (f.lookup?.trim() && !f.place_id?.trim()) { const j = startJob('canonical', client.slug, log => refreshCanonical(getClient(client.slug), { log, lookup: f.lookup.trim() })); return redirect(`/job/${j.id}`); }
-      return redirect(`/client/${client.slug}`);
+      if (f.lookup?.trim()) {
+        if (!config.placesKey) return bounce(`/client/${client.slug}`, 'error', 'Google lookup is not available yet', 'GOOGLE_PLACES_API_KEY is not set, so the Google Business Profile cannot be read. Add the key in your host\u2019s environment settings, or type the facts in by hand below.');
+        update('clients', client.id, { place_id: null, updated_at: now() });
+        const j = startJob('canonical', client.slug, log => refreshCanonical(getClient(client.slug), { log, lookup: f.lookup.trim() }));
+        return redirect(`/job/${j.id}`);
+      }
+      return bounce(`/client/${client.slug}`, 'ok', 'Saved', '');
     }
     if ((mm = p.match(/^\/client\/([\w-]+)\/canonical$/))) {
       const client = getClient(mm[1]);
