@@ -280,7 +280,9 @@ function authorized(req) {
 await restore().catch(e => console.error('[persist] restore failed:', e.message));
 getDb();
 createServer((req, res) => {
-  if (!authorized(req)) { res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="citation-audit"' }); return res.end('auth required'); }
+  // /health must stay open: platform health checks send no credentials, and a 401 there fails the deploy.
+  const isHealth = (req.url || '').split('?')[0] === '/health';
+  if (!isHealth && !authorized(req)) { res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="citation-audit"' }); return res.end('auth required'); }
   let body = '';
   req.on('data', c => { body += c; });
   req.on('end', () => handle(req, res, body).catch(e => { console.error(e); res.writeHead(500, { 'Content-Type': 'text/html' }); res.end(layout('Error', `<h1>Error</h1><pre class="log">${esc(e.stack || e.message)}</pre>`)); }));
