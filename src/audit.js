@@ -33,7 +33,7 @@ export async function refreshCanonical(client, { log = console.log, lookup = nul
     gbp = await placeDetails(client.place_id);
     log(`  GBP: ${gbp.name} — ${gbp.formatted_address}`);
   } else {
-    log('  no place_id on client; skipping GBP (add with: client set <slug> --place-id ... or --lookup "Name City ST")');
+    log('  no Google Business Profile linked, reading the website instead (this covers every field)');
   }
   if (gbp) {
     for (const f of ['name', 'address', 'phone', 'website', 'hours', 'categories']) {

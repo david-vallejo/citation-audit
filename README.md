@@ -59,7 +59,7 @@ The CLI mirrors every step: `node src/cli.js` prints the commands. `node src/cli
 
 ## Google setup
 
-- **Places API (New):** Google Cloud → enable *Places API (New)* → create an API key → `GOOGLE_PLACES_API_KEY`.
+- **Places API (New) — optional, needs Google Cloud billing:** enable *Places API (New)* → create an API key → `GOOGLE_PLACES_API_KEY`. Skip it if you would rather not attach a card: *Refresh canonical facts* reads the client website with Claude and fills in name, address, phone, hours, year founded and services on its own. Google Business Profile is only a second opinion on those same fields.
 - **Programmable Search (discovery):** programmablesearchengine.google.com → create an engine → copy its Search engine ID to `GOOGLE_CSE_CX`; enable *Custom Search API* in the same Cloud project and use the API key as `GOOGLE_CSE_KEY`.
   Google **deprecated "Search the entire web"** and it can no longer be enabled on new engines, so the engine must be restricted to the citation directories instead. Paste the domains from `docs/cse-domains.txt` into *Search Features → Sites to search* (40 entries, Google's cap is 50). That is not a downgrade for this tool: every result then comes from a real directory, so discovery gets cleaner, not worse. Only directories missing from that list become undiscoverable, and you can add any others you care about.
 - **Sheets:** same project → enable *Google Sheets API* and *Google Drive API* → create a service account → download JSON → `GOOGLE_SERVICE_ACCOUNT_JSON=./service-account.json`. Put your Google account in `SHEET_SHARE_WITH` so the generated sheet appears in your Drive.

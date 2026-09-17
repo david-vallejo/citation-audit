@@ -48,7 +48,7 @@ export async function diagnose({ callClaude = true } = {}) {
 
   // 2. Google Places (canonical GBP facts)
   if (!config.placesKey) {
-    out.push(warn('Google Places API', 'Not set, so GBP facts are skipped', 'Optional. Without it, enter the canonical name/address/phone by hand on the client page.'));
+    out.push(warn('Google Places API', 'Not set, so facts come from the website instead of Google Business Profile', 'Optional, and it needs a billing account on Google Cloud. "Refresh canonical facts" reads the client website and fills in name, address, phone, hours, year founded and services without it.'));
   } else {
     try {
       const hits = await searchPlaces('Anvil Fence Company Garden City ID');

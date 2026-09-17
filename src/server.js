@@ -282,8 +282,8 @@ function homePage() {
 <div><label>Slug (short id)</label><input type="text" name="slug" required placeholder="anvilfence"></div>
 <div><label>Business name</label><input type="text" name="name" required placeholder="Anvil Fence Co"></div>
 <div><label>Website</label><input type="url" name="website" placeholder="https://anvilfence.com"></div>
-<div><label>Google Business Profile</label><input type="text" name="lookup" placeholder="Paste the Google Maps link for the business"></div>
-</div><p class="actions"><button>Add client</button></p><p class="muted small">Open the business in Google Maps and paste the address bar. A share link or the business name plus city also works. ${config.placesKey ? '' : 'Google lookup is off until GOOGLE_PLACES_API_KEY is set, so you can type the facts in by hand instead.'}</p></form></div>`);
+<div><label>Google Business Profile (optional)</label><input type="text" name="lookup" placeholder="Paste the Google Maps link, or leave empty"></div>
+</div><p class="actions"><button>Add client</button></p><p class="muted small">The website is the only field that matters. After adding the client, "Refresh canonical facts" reads that site and fills in the name, address, phone, hours, year founded and services. ${config.placesKey ? 'The Google link is a second source if you want it.' : 'Linking a Google Business Profile is optional and needs a Google Cloud billing account, so leave it empty for now.'}</p></form></div>`);
 }
 
 function canonicalTable(client, canon) {
@@ -543,7 +543,7 @@ async function handle(req, res, body) {
       insert('clients', { id: uuid(), slug, name: f.name.trim(), website: f.website?.trim() || null, place_id: null, sheet_id: null, created_at: now(), updated_at: now() });
       schedulePersist();
       if (f.lookup?.trim()) {
-        if (!config.placesKey) return bounce(`/client/${slug}`, 'warn', 'Client added, but the Google lookup was skipped', 'GOOGLE_PLACES_API_KEY is not set, so the Google Business Profile could not be read. Type the name, address and phone into the Override column below, which works just as well.');
+        if (!config.placesKey) return bounce(`/client/${slug}`, 'ok', 'Client added, and the Google link was ignored', 'Reading Google Business Profile needs a paid Google Cloud key, which is not set. Click "Refresh canonical facts" instead: it reads the website and fills in every field.');
         const client = getClient(slug);
         const j = startJob('canonical', slug, log => refreshCanonical(client, { log, lookup: f.lookup.trim() }));
         return redirect(`/job/${j.id}`);
@@ -556,7 +556,7 @@ async function handle(req, res, body) {
       update('clients', client.id, { website: f.website?.trim() || null, updated_at: now() });
       schedulePersist();
       if (f.lookup?.trim()) {
-        if (!config.placesKey) return bounce(`/client/${client.slug}`, 'error', 'Google lookup is not available yet', 'GOOGLE_PLACES_API_KEY is not set, so the Google Business Profile cannot be read. Add the key in your host\u2019s environment settings, or type the facts in by hand below.');
+        if (!config.placesKey) return bounce(`/client/${client.slug}`, 'warn', 'Google lookup is not switched on', 'Reading Google Business Profile needs GOOGLE_PLACES_API_KEY, which requires a billing account on Google Cloud. You do not need it: click "Refresh canonical facts" and the website is read instead.');
         update('clients', client.id, { place_id: null, updated_at: now() });
         const j = startJob('canonical', client.slug, log => refreshCanonical(getClient(client.slug), { log, lookup: f.lookup.trim() }));
         return redirect(`/job/${j.id}`);
@@ -585,7 +585,7 @@ async function handle(req, res, body) {
     if ((mm = p.match(/^\/client\/([\w-]+)\/canonical\/refresh$/))) {
       const client = getClient(mm[1]);
       if (busy(client.slug)) return bounce(`/client/${client.slug}`, 'warn', 'Something is already running for this client', 'Wait for it to finish, then try again.');
-      if (!client.place_id && !client.website) return bounce(`/client/${client.slug}`, 'error', 'Nothing to refresh from', 'Add a website address or a Google Place ID first, using the Save row below. Or type the facts in by hand.');
+      if (!client.place_id && !client.website) return bounce(`/client/${client.slug}`, 'error', 'Add the website first', 'Put the client\u2019s website in the box below and press Save. The refresh reads that site to fill in every field.');
       if (!config.anthropicKey && client.website) return bounce(`/client/${client.slug}`, 'error', 'Claude API key is not set', 'Reading the website needs ANTHROPIC_API_KEY. Add it in your host\u2019s environment settings, then run the setup check.');
       const j = startJob('canonical', client.slug, log => refreshCanonical(client, { log }));
       return redirect(`/job/${j.id}`);
