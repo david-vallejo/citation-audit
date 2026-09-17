@@ -7,6 +7,7 @@ import { classifyUrl } from './discovery/directories.js';
 import { writeReport, runById } from './report/sheets.js';
 import { parseAddress, normHours, normServices } from './compare/normalize.js';
 import { AUDIT_FIELDS, PHASE2_FIELDS } from './config.js';
+import { diagnose } from './diagnose.js';
 
 const argv = process.argv.slice(2);
 const flags = {}; const pos = [];
@@ -31,6 +32,7 @@ citation-audit — commands
   report <slug|run-id>
   run <slug>                                     canonical (if missing) → discover (if empty) → audit → report
   serve                                          start the web UI
+  check                                          verify every key works (makes one ~\$0.001 Claude call)
 `;
 
 function parseValue(field, v) {
@@ -116,6 +118,12 @@ try {
       const rep = await writeReport(r, client);
       log(`${rep.kind}: ${rep.location}`);
       if (r.qa_pending) log(`${r.qa_pending} findings need QA — review at the web UI (node src/cli.js serve) then regenerate the report.`);
+      break;
+    }
+    case 'check': {
+      const r = await diagnose();
+      for (const c of r.checks) console.log(`  ${c.status.toUpperCase().padEnd(4)} ${c.name.padEnd(22)} ${c.detail}${c.fix ? `\n       → ${c.fix}` : ''}`);
+      console.log(r.blocking ? `\n${r.blocking} blocking problem(s).` : '\nNo blocking problems.');
       break;
     }
     case 'serve': await import('./server.js'); break;

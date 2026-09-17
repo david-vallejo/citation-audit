@@ -31,8 +31,17 @@ function recordUsage(purpose, model, u) {
   return cost;
 }
 
-const nullable = t => ({ type: [t, 'null'] });
-const nullableList = () => ({ type: ['array', 'null'], items: { type: 'string' } });
+// Structured outputs support `anyOf` but not type-union arrays, and reject
+// numeric constraints (minimum/maximum). Keep the schema to the documented subset.
+const nullable = t => ({ anyOf: [{ type: t }, { type: 'null' }] });
+const nullableList = () => ({ anyOf: [{ type: 'array', items: { type: 'string' } }, { type: 'null' }] });
+const nullableObject = (props, description) => ({
+  anyOf: [
+    { type: 'object', additionalProperties: false, required: Object.keys(props), properties: props },
+    { type: 'null' },
+  ],
+  ...(description ? { description } : {}),
+});
 
 export const LISTING_SCHEMA = {
   type: 'object',
@@ -41,22 +50,18 @@ export const LISTING_SCHEMA = {
   properties: {
     is_profile_page: { type: 'boolean', description: 'true if this page is a listing/profile for exactly one business' },
     name: nullable('string'),
-    address: {
-      type: ['object', 'null'], additionalProperties: false, required: ['street', 'city', 'state', 'zip'],
-      properties: { street: nullable('string'), city: nullable('string'), state: nullable('string'), zip: nullable('string') },
-    },
+    address: nullableObject({ street: nullable('string'), city: nullable('string'), state: nullable('string'), zip: nullable('string') }),
     phone: nullable('string'),
     website: nullable('string'),
-    hours: {
-      type: ['object', 'null'], additionalProperties: false, required: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
-      description: 'Per-day string exactly as listed, e.g. "8:00 AM - 5:00 PM", "Closed", "Open 24 hours"; null when a day is not listed',
-      properties: { mon: nullable('string'), tue: nullable('string'), wed: nullable('string'), thu: nullable('string'), fri: nullable('string'), sat: nullable('string'), sun: nullable('string') },
-    },
+    hours: nullableObject(
+      { mon: nullable('string'), tue: nullable('string'), wed: nullable('string'), thu: nullable('string'), fri: nullable('string'), sat: nullable('string'), sun: nullable('string') },
+      'Per-day string exactly as listed, e.g. "8:00 AM - 5:00 PM", "Closed", "Open 24 hours"; null when a day is not listed',
+    ),
     year_founded: nullable('integer'),
     services: nullableList(),
     categories: nullableList(),
     email: nullable('string'),
-    confidence: { type: 'number', minimum: 0, maximum: 1, description: 'How confident you are that the extracted values belong to the target business and were read correctly' },
+    confidence: { type: 'number', description: 'Between 0 and 1: how confident you are that the extracted values belong to the target business and were read correctly' },
     notes: nullable('string'),
   },
 };
@@ -105,5 +110,6 @@ export async function extractListing(page, url, target, { isOwnSite = false } = 
   const data = JSON.parse(text);
   data.address = data.address && Object.values(data.address).some(Boolean) ? data.address : null;
   data.hours = data.hours && Object.values(data.hours).some(Boolean) ? data.hours : null;
+  data.confidence = Math.max(0, Math.min(1, Number(data.confidence) || 0));
   return { data, usage: res.usage, model: res.model, cost };
 }
