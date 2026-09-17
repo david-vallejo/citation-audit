@@ -33,7 +33,11 @@ export async function refreshCanonical(client, { log = console.log, lookup = nul
     gbp = await placeDetails(client.place_id);
     log(`  GBP: ${gbp.name} — ${gbp.formatted_address}`);
   } else {
-    log('  no Google Business Profile linked, reading the website instead (this covers every field)');
+    // Google Business Profile is a second source we are not using yet: Places needs a
+    // Google Cloud billing account. The whole path above still works and turns itself on
+    // when GOOGLE_PLACES_API_KEY is set, so only mention it once that is a real option.
+    // When we do enable it, restore a line here saying the profile was not linked.
+    if (config.placesKey) log('  no Google Business Profile linked, reading the website instead');
   }
   if (gbp) {
     for (const f of ['name', 'address', 'phone', 'website', 'hours', 'categories']) {
