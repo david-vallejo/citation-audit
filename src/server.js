@@ -33,6 +33,53 @@ function flash(kind, title, detail = '') {
 const takeFlash = id => { const f = flashes.get(id); if (f) flashes.delete(id); return f; };
 const withFlash = (to, id) => (id ? `${to}${to.includes('?') ? '&' : '?'}m=${id}` : to);
 
+// Adding a client and then clicking three buttons is busywork. This runs the whole
+// pipeline once: read the source of truth, find profiles, audit them, build the report.
+// Each stage is allowed to fall short without losing the stages before it.
+async function firstRun(slug, log) {
+  const out = {};
+  log('Step 1 of 3 — reading the source of truth');
+  try {
+    await refreshCanonical(getClient(slug), { log, lookup: config.placesKey ? getClient(slug).gbp_url : null });
+    out.canonical = true;
+  } catch (e) {
+    log(`  could not read it: ${e.message}`);
+    log('  stopping here: an audit needs at least a business name and phone.');
+    out.stoppedAt = 'canonical';
+    return out;
+  }
+  const canon = getCanonical(getClient(slug).id);
+  if (!canon.name || !canon.phone) {
+    log('  the website did not give both a business name and a phone number.');
+    log('  fill those in on the client page, then run the audit.');
+    out.stoppedAt = 'canonical';
+    return out;
+  }
+  log('');
+  log('Step 2 of 3 — finding and checking directory profiles');
+  let run;
+  try {
+    run = await runAudit(getClient(slug), { log });
+    out.runId = run.id;
+  } catch (e) {
+    log(`  ${e.message}`);
+    out.stoppedAt = 'audit';
+    return out;
+  }
+  log('');
+  log('Step 3 of 3 — building the report');
+  try {
+    const rep = await writeReport(run, getClient(slug));
+    out.report = rep;
+    log(`  ${rep.kind === 'google-sheet' ? 'Google Sheet' : 'CSV'}: ${rep.location}`);
+  } catch (e) {
+    log(`  the report could not be written: ${e.message}`);
+    log('  the audit itself is saved; generate the report from the run page.');
+    out.stoppedAt = 'report';
+  }
+  return out;
+}
+
 const jobs = new Map();
 function startJob(kind, slug, fn) {
   const job = { id: uuid(), kind, slug, log: [], done: false, error: null, result: null, started: now() };
@@ -140,6 +187,22 @@ td a[href^="http"],.mono{font-family:var(--mono); font-size:12.5px}
 .badge.consistent{color:var(--ok); border-color:rgba(92,230,166,.35); background:rgba(92,230,166,.08)}
 .badge.unable_to_verify{color:var(--warn); border-color:rgba(245,196,81,.35); background:rgba(245,196,81,.08)}
 .badge.dismissed{color:var(--faint)}
+/* A long model call looks frozen without this. Motion here reports live state. */
+.badge.working{color:var(--blue); border-color:var(--blue-deep); background:rgba(116,212,255,.08)}
+.badge.working::before{
+  width:9px; height:9px; background:none; border:1.5px solid rgba(116,212,255,.28);
+  border-top-color:var(--blue); animation:spin .7s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+pre.log.live::after{
+  content:"\\2588"; color:var(--blue); animation:blink 1.1s steps(1) infinite; margin-left:1px;
+}
+@keyframes blink{50%{opacity:0}}
+/* Reduced motion keeps the elapsed counter, which carries the same information. */
+@media (prefers-reduced-motion:reduce){
+  .badge.working::before{animation:none; border-top-color:var(--blue); border-color:var(--blue)}
+  pre.log.live::after{animation:none}
+}
 
 /* ---- controls ---- */
 button,.btn{
@@ -324,7 +387,9 @@ ${clients.length > 1 ? `<p class="muted small" style="margin:10px 0 0">Sorted by
 <div><label>Business name</label><input type="text" name="name" required placeholder="Anvil Fence Company"></div>
 <div><label>Website</label><input type="url" name="website" placeholder="https://anvilfence.com"></div>
 <div><label>Google Business Profile (optional)</label><input type="text" name="gbp_url" placeholder="Paste the Google Maps link"></div>
-</div><p class="actions"><button>Add client</button></p><p class="muted small">After adding the client, "Refresh canonical facts" reads the website and fills in the name, address, phone, hours, year founded and services.</p></form></div>`);
+</div><p class="actions"><button>Add client and run the first audit</button>
+<label class="inline small muted" style="display:inline-flex; align-items:center; gap:6px"><input type="checkbox" name="autorun" value="1" checked style="width:auto"> run it now</label></p>
+<p class="muted small">Running it reads the website for the source of truth, finds directory profiles, checks each one and builds the report. It takes a few minutes and costs a few cents. Untick to add the client and run it later.</p></form></div>`);
 }
 
 // Everything that belongs to one client, newest dependants first so foreign keys hold.
@@ -449,14 +514,14 @@ ${isBusy ? '<span class="muted">a job is running — see below</span>' : ''}</di
 
 <h2>Source of truth</h2><div class="card">${canonicalTable(client, canon)}<p class="muted small" style="margin:12px 0 0">Google Business Profile and the website fill this in. Anything you edit by hand wins and is never overwritten by a refresh.</p></div>${CANON_JS}
 
-<h2>Audit runs</h2><div class="card">${table(['Started', 'Mode', 'Profiles', 'Consistent', 'Conflicts', 'Unverified', 'Report'], runs.map(r => [link(`/run/${r.id}`, r.started_at.replace('T', ' ').slice(0, 16)), esc(r.mode), String(r.citations_total), String(r.consistent), String(r.conflicts), String(r.unverified), r.sheet_url ? (r.sheet_url.startsWith('http') ? ext(r.sheet_url, 'Google Sheet') : `<span class="small">${esc(r.sheet_url.replace(config.reportsDir, 'reports'))}</span>`) : (r.finished_at ? `<form method="post" action="/run/${r.id}/report" class="inline"><button class="secondary" ${dis}>Generate</button></form>` : '<span class="muted">running…</span>')]))}</div>
+${runs.length ? `<h2>Audit runs</h2><div class="card">${table(['Started', 'Mode', 'Profiles', 'Consistent', 'Conflicts', 'Unverified', 'Report'], runs.map(r => [link(`/run/${r.id}`, r.started_at.replace('T', ' ').slice(0, 16)), esc(r.mode), String(r.citations_total), String(r.consistent), String(r.conflicts), String(r.unverified), r.sheet_url ? (r.sheet_url.startsWith('http') ? ext(r.sheet_url, 'Google Sheet') : `<span class="small">${esc(r.sheet_url.replace(config.reportsDir, 'reports'))}</span>`) : (r.finished_at ? `<form method="post" action="/run/${r.id}/report" class="inline"><button class="secondary" ${dis}>Generate</button></form>` : '<span class="muted">running…</span>')]))}</div>` : ''}
 
-<h2>Citation inventory <span class="muted small">${inv.length} known, ${active} active, re-used on every run</span></h2><div class="card">
+<h2>Citation inventory${inv.length ? ` <span class="muted small">${inv.length} known, ${active} active, re-used on every run</span>` : ''}</h2><div class="card">${inv.length ? `
 ${table(['Directory', 'Profile URL', 'Status', 'Last result', 'Last audited', 'Found via', ''], inv.map(c => [esc(c.directory), `<span class="wrap">${ext(c.url)}</span>${c.notes ? `<div class="muted small">${esc(c.notes)}</div>` : ''}`, badge(c.status), c.last_result ? badge(c.last_result) : '', `<span class="nowrap">${esc((c.last_audited_at || '').slice(0, 10))}</span>`, `<span class="nowrap">${esc(c.discovered_via)}</span> <span class="muted nowrap">${esc(c.discovered_at.slice(0, 10))}</span>`,
-  `<form method="post" action="/citation/${c.id}/status" class="inline"><select name="status" onchange="this.form.submit()"><option ${c.status === 'active' ? 'selected' : ''} value="active">active</option><option ${c.status === 'ignored' ? 'selected' : ''} value="ignored">ignore</option><option ${c.status === 'not_client' ? 'selected' : ''} value="not_client">not this business</option><option ${c.status === 'dead' ? 'selected' : ''} value="dead">dead link</option></select></form>`]))}
-<form method="post" action="/client/${slug}/citation/add" class="actions" style="margin-top:10px"><input type="url" name="url" placeholder="Add a profile URL manually (https://www.yelp.com/biz/…)" style="width:480px" required><button class="secondary">Add</button></form></div>
+  `<form method="post" action="/citation/${c.id}/status" class="inline"><select name="status" onchange="this.form.submit()"><option ${c.status === 'active' ? 'selected' : ''} value="active">active</option><option ${c.status === 'ignored' ? 'selected' : ''} value="ignored">ignore</option><option ${c.status === 'not_client' ? 'selected' : ''} value="not_client">not this business</option><option ${c.status === 'dead' ? 'selected' : ''} value="dead">dead link</option></select></form>`]))}` : `<p class="muted small" style="margin:0 0 10px">No profiles stored yet. "Discover profiles" searches for them, or paste one below.</p>`}
+<form method="post" action="/client/${slug}/citation/add" class="actions"><input type="url" name="url" placeholder="Add a profile URL manually (https://www.yelp.com/biz/…)" style="width:480px" required><button class="secondary">Add</button></form></div>
 
-<h2>Discovery log</h2><div class="card">${table(['When', 'Provider', 'Query', 'Results', 'New'], log.map(l => [esc(l.ran_at.replace('T', ' ').slice(0, 16)), esc(l.provider), esc(l.query), String(l.results_count), String(l.new_citations)]))}</div>`);
+${log.length ? `<h2>Discovery log</h2><div class="card">${table(['When', 'Provider', 'Query', 'Results', 'New'], log.map(l => [esc(l.ran_at.replace('T', ' ').slice(0, 16)), esc(l.provider), esc(l.query), String(l.results_count), String(l.new_citations)]))}</div>` : ''}`);
 }
 
 function runPage(id, filter = 'qa') {
@@ -514,6 +579,7 @@ function jobPage(id) {
   const destination = j.error ? null
     : j.kind === 'audit' && j.result?.id ? `/run/${j.result.id}`
     : j.kind === 'report' && j.result?.kind === 'google-sheet' ? j.result.location
+    : j.kind === 'firstrun' && j.result?.runId ? `/run/${j.result.runId}`
     : `/client/${j.slug}`;
   const manual = j.done && !j.error && destination
     ? `<p><a class="btn" href="${esc(destination)}">Continue</a> <span class="muted small">Taking you there now.</span></p>` : '';
@@ -522,14 +588,20 @@ function jobPage(id) {
       + `<p><a class="btn secondary" href="/client/${j.slug}">Back to ${esc(j.slug)}</a></p>`
     : '';
   const running = !j.done;
-  return layout(`${j.kind} job`, `${errBox}<h1>${esc(j.kind === 'canonical' ? 'Reading the source of truth' : j.kind === 'discover' ? 'Finding profiles' : j.kind === 'audit' ? 'Auditing profiles' : 'Building the report')} for ${link(`/client/${j.slug}`, j.slug)} ${j.done ? (j.error ? '<span class="badge conflict">failed</span>' : '<span class="badge consistent">done</span>') : '<span class="badge">working</span>'}</h1>
-${running ? '<p class="muted small">This can take a minute. You will be taken to the results automatically when it finishes.</p>' : ''}
-<pre class="log" id="log">${esc(j.log.join('\n'))}</pre>${manual}
+  return layout(`${j.kind} job`, `${errBox}<h1>${esc(j.kind === 'canonical' ? 'Reading the source of truth' : j.kind === 'discover' ? 'Finding profiles' : j.kind === 'audit' ? 'Auditing profiles' : j.kind === 'firstrun' ? 'Setting up' : 'Building the report')} for ${link(`/client/${j.slug}`, j.slug)} ${j.done ? (j.error ? '<span class="badge conflict">failed</span>' : '<span class="badge consistent">done</span>') : '<span class="badge working">working <span id="elapsed"></span></span>'}</h1>
+${running ? '<p class="muted small">Reading a page with Claude takes 10 to 30 seconds each. You will be taken to the results automatically when it finishes.</p>' : ''}
+<pre class="log${running ? ' live' : ''}" id="log">${esc(j.log.join('\n'))}</pre>${manual}
 <script>
 (function () {
   var done = ${j.done}, dest = ${destination ? JSON.stringify(destination) : 'null'};
   if (done) { if (dest) setTimeout(function () { location.href = dest; }, 700); return; }
-  var log = document.getElementById('log');
+  var log = document.getElementById('log'), el = document.getElementById('elapsed');
+  var started = ${JSON.stringify(j.started)};
+  var t0 = Date.parse(started) || Date.now();
+  setInterval(function () {
+    var s = Math.max(0, Math.round((Date.now() - t0) / 1000));
+    if (el) el.textContent = s < 60 ? s + 's' : Math.floor(s / 60) + 'm ' + (s % 60) + 's';
+  }, 1000);
   var t = setInterval(function () {
     fetch('/job/${id}/log').then(function (r) { return r.json(); }).then(function (j) {
       log.textContent = j.log.join('\n');
@@ -659,13 +731,14 @@ async function handle(req, res, body) {
       if (f.website?.trim() && !/^https?:\/\/[^\s.]+\.[^\s]+$/i.test(f.website.trim())) return bounce('/', 'error', 'That website address does not look valid', `Received "${f.website.trim()}". Include the full address, for example https://anvilfence.com`);
       insert('clients', { id: uuid(), slug, name: f.name.trim(), website: f.website?.trim() || null, place_id: null, gbp_url: f.gbp_url?.trim() || null, sheet_id: null, created_at: now(), updated_at: now() });
       schedulePersist();
-      if (f.gbp_url?.trim()) {
-        if (!config.placesKey) return bounce(`/client/${slug}`, 'ok', `Added ${f.name.trim()}`, 'The Google link is saved. Click "Refresh canonical facts" to fill in the details from the website.');
-        const client = getClient(slug);
-        const j = startJob('canonical', slug, log => refreshCanonical(client, { log, lookup: f.gbp_url.trim() }));
+      if (f.autorun === '1' && f.website?.trim()) {
+        if (!config.anthropicKey) return bounce(`/client/${slug}`, 'error', `Added ${f.name.trim()}, but the audit cannot run`, 'ANTHROPIC_API_KEY is not set, so nothing can be read. Add it in your host\u2019s environment settings and run the setup check.');
+        const j = startJob('firstrun', slug, log => firstRun(slug, log));
         return redirect(`/job/${j.id}`);
       }
-      return bounce(`/client/${slug}`, 'ok', `Added ${f.name.trim()}`, 'Next: set the canonical facts below, either with "Refresh canonical facts" or by typing them into the Override column.');
+      return bounce(`/client/${slug}`, 'ok', `Added ${f.name.trim()}`, f.website?.trim()
+        ? 'Click "Refresh canonical facts" to read the website, then run the audit.'
+        : 'Add the website on the client page, then click "Refresh canonical facts".');
     }
     if ((mm = p.match(/^\/client\/([\w-]+)\/set$/))) {
       const client = getClient(mm[1]);
