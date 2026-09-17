@@ -6,7 +6,7 @@ import { get, update, now } from '../db.js';
 import { effectiveFindings, suggestion } from '../audit.js';
 
 const TABS = ['Client Action', 'Citation Inventory', 'Internal QA'];
-const label = s => ({ consistent: 'Consistent', conflict: 'Conflict', unable_to_verify: 'Unable to Verify', dismissed: 'Dismissed (QA)' }[s] || s);
+const label = s => ({ consistent: 'Consistent', conflict: 'Conflict', needs_review: 'Needs Review', unable_to_verify: 'Unable to Verify', dismissed: 'Dismissed (QA)' }[s] || s);
 const fieldLabel = f => ({ name: 'Business Name', address: 'Address', phone: 'Phone', website: 'Website', hours: 'Hours', year_founded: 'Year Founded', services: 'Services', categories: 'Categories', email: 'Email' }[f] || f);
 
 export function buildTabs(run, client) {
@@ -21,16 +21,25 @@ export function buildTabs(run, client) {
   for (const [, fs] of byCitation) {
     const c = fs[0];
     const conflicts = fs.filter(f => f.effective_status === 'conflict' && !f.qa_open).map(f => fieldLabel(f.field));
+    const pendingConflicts = fs.filter(f => f.effective_status === 'conflict' && f.qa_open).map(f => fieldLabel(f.field));
     const pending = fs.filter(f => f.qa_open).length;
-    const status = conflicts.length ? 'conflict' : fs.every(f => f.effective_status === 'unable_to_verify') ? 'unable_to_verify' : 'consistent';
-    inv.push([c.directory, c.url, label(status), conflicts.join(', '), pending ? `${pending} finding(s) in QA` : '', (c.last_audited_at || '').slice(0, 10), c.discovered_via, (c.discovered_at || '').slice(0, 10)]);
+    // A profile with unreviewed conflicts is not "Consistent". Saying so in a
+    // client-facing tab understates the problem and undermines the whole report.
+    const status = conflicts.length ? 'conflict'
+      : pendingConflicts.length ? 'needs_review'
+      : fs.every(f => f.effective_status === 'unable_to_verify') ? 'unable_to_verify'
+      : 'consistent';
+    const fields = [...conflicts, ...pendingConflicts.map(f => `${f} (in review)`)].join(', ');
+    inv.push([c.directory, c.url, label(status), fields, pending ? `${pending} finding(s) in QA` : '', (c.last_audited_at || '').slice(0, 10), c.discovered_via, (c.discovered_at || '').slice(0, 10)]);
   }
 
   const qa = [['Directory', 'Profile URL', 'Field', 'Raw Status', 'Effective Status', 'Confidence', 'Needs QA', 'QA Decision', 'QA Note', 'Expected (canonical)', 'Found (cited)', 'Reason', 'Fetch Method', 'HTTP', 'Extraction Confidence', 'Fetch/Extract Error', 'Finding ID']];
   for (const r of rows) qa.push([r.directory, r.url, fieldLabel(r.field), label(r.status), label(r.effective_status), r.confidence, r.qa_open ? 'YES' : '', r.decision || '', r.qa_note || '', r.expected, r.found, r.reason || '', r.fetch_method || '', r.http_status ?? '', r.extraction_confidence ?? '', r.snapshot_error || '', r.id]);
 
-  const meta = [`${client.name} — Citation Audit`, `Run ${run.id} (${run.mode}) started ${run.started_at}`, `${run.citations_total} profiles: ${run.consistent} consistent, ${run.conflicts} conflict, ${run.unverified} unable to verify`];
-  return { tabs: { [TABS[0]]: action, [TABS[1]]: inv, [TABS[2]]: qa }, meta };
+  const skipped = [...new Set(rows.filter(r => /No canonical .* on file/i.test(r.reason || '')).map(r => fieldLabel(r.field)))];
+  const meta = [`${client.name} — Citation Audit`, `Run ${run.id} (${run.mode}) started ${run.started_at}`, `${run.citations_total} profiles: ${run.consistent} consistent, ${run.conflicts} conflict, ${run.unverified} unable to verify`,
+    ...(skipped.length ? [`Not checked anywhere because no canonical value is set: ${skipped.join(', ')}. Set them on the client page and re-run.`] : [])];
+  return { tabs: { [TABS[0]]: action, [TABS[1]]: inv, [TABS[2]]: qa }, meta, skipped };
 }
 
 // ---- Google auth (service account, no googleapis dependency) ----
@@ -90,7 +99,7 @@ export async function writeGoogleSheet(run, client) {
     );
   }
   const statusCol = 2;
-  for (const [color, text] of [[{ red: 0.99, green: 0.85, blue: 0.85 }, 'Conflict'], [{ red: 0.85, green: 0.95, blue: 0.85 }, 'Consistent'], [{ red: 1, green: 0.95, blue: 0.8 }, 'Unable to Verify']]) {
+  for (const [color, text] of [[{ red: 0.99, green: 0.85, blue: 0.85 }, 'Conflict'], [{ red: 0.85, green: 0.95, blue: 0.85 }, 'Consistent'], [{ red: 1, green: 0.95, blue: 0.8 }, 'Unable to Verify'], [{ red: 0.9, green: 0.92, blue: 1 }, 'Needs Review']]) {
     fmt.push({ addConditionalFormatRule: { rule: { ranges: [{ sheetId: props[TABS[1]].sheetId, startRowIndex: 1, startColumnIndex: statusCol, endColumnIndex: statusCol + 1 }], booleanRule: { condition: { type: 'TEXT_EQ', values: [{ userEnteredValue: text }] }, format: { backgroundColor: color } } }, index: 0 } });
   }
   await gapi(`${SHEETS}/${ss.spreadsheetId}:batchUpdate`, 'POST', { requests: fmt });
