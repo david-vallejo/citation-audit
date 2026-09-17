@@ -5,31 +5,25 @@ services:
     plan: free
     healthCheckPath: /health
     envVars:
+      # Prompted at blueprint creation (required)
       - key: ANTHROPIC_API_KEY
-        sync: false
-      - key: GOOGLE_PLACES_API_KEY
         sync: false
       - key: APP_PASSWORD
         sync: false
-      - key: DISCOVERY_PROVIDER
-        value: google-cse,ddg
-      - key: GOOGLE_CSE_KEY
-        sync: false
-      - key: GOOGLE_CSE_CX
-        sync: false
-      - key: FETCH_PROXY
-        sync: false
-      - key: FETCH_PROXY_KEY
-        sync: false
-      - key: GH_DB_TOKEN
-        sync: false
-      - key: GH_DB_REPO
-        sync: false
+      # Defaults; change in the service's Environment tab
       - key: CLAUDE_MODEL
         value: claude-haiku-4-5
       - key: DAILY_CLAUDE_CALLS
         value: "80"
       - key: DAILY_COST_LIMIT_USD
         value: "1.00"
+      - key: DISCOVERY_PROVIDER
+        value: google-cse,ddg
       - key: DB_PATH
         value: /tmp/citation-audit.sqlite
+      # Add later in the Environment tab when you have them:
+      #   GOOGLE_PLACES_API_KEY   GBP facts
+      #   GOOGLE_CSE_KEY, GOOGLE_CSE_CX   free Google search discovery (falls back to ddg until set)
+      #   FETCH_PROXY, FETCH_PROXY_KEY    scraperapi|scrapingbee for Yelp/YP/BBB
+      #   GH_DB_TOKEN, GH_DB_REPO         keep the SQLite file across restarts
+      #   GOOGLE_SERVICE_ACCOUNT_JSON     path to a Secret File for Sheets output
