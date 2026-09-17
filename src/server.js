@@ -15,6 +15,7 @@ import { diagnose } from './diagnose.js';
 
 const PORT = process.env.PORT || config.qaPort;
 const PASSWORD = process.env.APP_PASSWORD;
+const STARTED = new Date().toISOString();
 
 // ---------- jobs (in-process, polled by the browser) ----------
 // Short-lived messages shown as a closable banner after a redirect.
@@ -281,7 +282,7 @@ async function handle(req, res, body) {
     if ((mm = p.match(/^\/job\/([\w-]+)\/log$/))) { const j = jobs.get(mm[1]); return j ? json({ log: j.log, done: j.done, error: j.error }) : json({ log: ['unknown job'], done: true }); }
     if ((mm = p.match(/^\/job\/([\w-]+)$/))) { const pg = jobPage(mm[1]); return pg ? html(pg) : html(notFoundPage('That job is no longer in memory, which usually means the server restarted.'), 404); }
     if (p === '/db/download') { getDb().exec('PRAGMA wal_checkpoint(TRUNCATE)'); res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Disposition': 'attachment; filename="citation-audit.sqlite"' }); return res.end(readFileSync(config.dbPath)); }
-    if (p === '/health') return json({ ok: true });
+    if (p === '/health') return json({ ok: true, commit: (process.env.RENDER_GIT_COMMIT || 'local').slice(0, 7), model: config.model, started: STARTED });
     if (p === '/setup') return html(setupPage(null));
     return html(notFoundPage(`No page at ${p}.`), 404);
   }
