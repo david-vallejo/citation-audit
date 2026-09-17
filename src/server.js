@@ -7,7 +7,7 @@ import { all, get, insert, update, uuid, now, getClient, getCanonical, setCanoni
 import { refreshCanonical, runAudit, effectiveFindings, latestRun, suggestion, displayCanonical } from './audit.js';
 import { discover, addCitation, inventory } from './discovery/index.js';
 import { classifyUrl } from './discovery/directories.js';
-import { writeReport, runById, buildTabs } from './report/sheets.js';
+import { writeReport, runById, reportFiles, reportFile } from './report/sheets.js';
 import { parseAddress, normHours, normServices, normPhone } from './compare/normalize.js';
 import { restore, schedulePersist, persistNow, enabled as persistEnabled } from './persist.js';
 import { usageToday } from './extract/claude.js';
@@ -398,6 +398,7 @@ function clientFootprint(clientId) {
   return {
     citations: n("SELECT COUNT(*) n FROM citations WHERE client_id = ?"),
     runs: n("SELECT COUNT(*) n FROM audit_runs WHERE client_id = ?"),
+    files: n("SELECT COUNT(*) n FROM report_files WHERE run_id IN (SELECT id FROM audit_runs WHERE client_id = ?)"),
     findings: n("SELECT COUNT(*) n FROM findings WHERE run_id IN (SELECT id FROM audit_runs WHERE client_id = ?)"),
     facts: n("SELECT COUNT(*) n FROM canonical_facts WHERE client_id = ?"),
   };
@@ -414,6 +415,7 @@ ${table(['What', 'Count'], [
   ['Audit runs and their evidence', String(f.runs)],
   ['Findings and QA decisions', String(f.findings)],
   ['Canonical facts', String(f.facts)],
+  ['Downloadable report files', String(f.files)],
 ])}
 <p class="muted small">Any report already written to Google Sheets or to the reports folder is left alone.</p>
 <p class="actions"><form method="post" action="/client/${esc(slug)}/delete" class="inline"><input type="hidden" name="confirm" value="${esc(slug)}"><button class="danger">Delete ${esc(client.name)}</button></form>
@@ -424,6 +426,7 @@ function deleteClient(clientId) {
   return transaction(() => {
     const d = sql => getDb().prepare(sql).run(clientId);
     d('DELETE FROM qa_decisions WHERE finding_id IN (SELECT f.id FROM findings f JOIN audit_runs r ON r.id = f.run_id WHERE r.client_id = ?)');
+    d('DELETE FROM report_files WHERE run_id IN (SELECT id FROM audit_runs WHERE client_id = ?)');
     d('DELETE FROM findings WHERE run_id IN (SELECT id FROM audit_runs WHERE client_id = ?)');
     d('DELETE FROM snapshots WHERE run_id IN (SELECT id FROM audit_runs WHERE client_id = ?)');
     d('DELETE FROM audit_runs WHERE client_id = ?');
@@ -514,7 +517,7 @@ ${isBusy ? '<span class="muted">a job is running — see below</span>' : ''}</di
 
 <h2>Source of truth</h2><div class="card">${canonicalTable(client, canon)}<p class="muted small" style="margin:12px 0 0">Google Business Profile and the website fill this in. Anything you edit by hand wins and is never overwritten by a refresh.</p></div>${CANON_JS}
 
-${runs.length ? `<h2>Audit runs</h2><div class="card">${table(['Started', 'Mode', 'Profiles', 'Consistent', 'Conflicts', 'Unverified', 'Report'], runs.map(r => [link(`/run/${r.id}`, r.started_at.replace('T', ' ').slice(0, 16)), esc(r.mode), String(r.citations_total), String(r.consistent), String(r.conflicts), String(r.unverified), r.sheet_url ? (r.sheet_url.startsWith('http') ? ext(r.sheet_url, 'Google Sheet') : `<span class="small">${esc(r.sheet_url.replace(config.reportsDir, 'reports'))}</span>`) : (r.finished_at ? `<form method="post" action="/run/${r.id}/report" class="inline"><button class="secondary" ${dis}>Generate</button></form>` : '<span class="muted">running…</span>')]))}</div>` : ''}
+${runs.length ? `<h2>Audit runs</h2><div class="card">${table(['Started', 'Mode', 'Profiles', 'Consistent', 'Conflicts', 'Unverified', 'Report'], runs.map(r => [link(`/run/${r.id}`, r.started_at.replace('T', ' ').slice(0, 16)), esc(r.mode), String(r.citations_total), String(r.consistent), String(r.conflicts), String(r.unverified), r.sheet_url && r.sheet_url.startsWith('http') ? ext(r.sheet_url, 'Google Sheet') : reportFiles(r.id).length ? link(`/run/${r.id}`, 'Download') : (r.finished_at ? `<form method="post" action="/run/${r.id}/report" class="inline"><button class="secondary" ${dis}>Generate</button></form>` : '<span class="muted">running…</span>')]))}</div>` : ''}
 
 <h2>Citation inventory${inv.length ? ` <span class="muted small">${inv.length} known, ${active} active, re-used on every run</span>` : ''}</h2><div class="card">${inv.length ? `
 ${table(['Directory', 'Profile URL', 'Status', 'Last result', 'Last audited', 'Found via', ''], inv.map(c => [esc(c.directory), `<span class="wrap">${ext(c.url)}</span>${c.notes ? `<div class="muted small">${esc(c.notes)}</div>` : ''}`, badge(c.status), c.last_result ? badge(c.last_result) : '', `<span class="nowrap">${esc((c.last_audited_at || '').slice(0, 10))}</span>`, `<span class="nowrap">${esc(c.discovered_via)}</span> <span class="muted nowrap">${esc(c.discovered_at.slice(0, 10))}</span>`,
@@ -532,13 +535,23 @@ function runPage(id, filter = 'qa') {
   const open = rows.filter(r => r.qa_open).length, conflicts = rows.filter(r => r.effective_status === 'conflict' && !r.qa_open).length;
   const shown = filter === 'qa' ? rows.filter(r => r.qa_open) : filter === 'conflicts' ? rows.filter(r => r.effective_status === 'conflict') : filter === 'action' ? rows.filter(r => r.effective_status === 'conflict' && !r.qa_open) : rows;
   const tab = (k, t) => `<a href="/run/${id}?filter=${k}" class="${filter === k ? 'on' : ''}">${t}</a>`;
+  const files = reportFiles(id);
   const skipped = [...new Set(rows.filter(r => /No canonical .* on file/i.test(r.reason || '')).map(r => fieldLabel(r.field)))];
   const skippedNote = skipped.length
     ? `<div class="notice warn"><button class="x" onclick="this.parentNode.remove()" title="Dismiss" aria-label="Dismiss">&times;</button><b>${skipped.length} field${skipped.length > 1 ? 's were' : ' was'} not checked on any profile</b><div class="detail">${esc(skipped.join(', '))} ${skipped.length > 1 ? 'have' : 'has'} no canonical value set, so there was nothing to compare against. Set ${skipped.length > 1 ? 'them' : 'it'} on ${client.name}'s page and run the audit again.</div></div>` : '';
   const qaForm = r => `<div class="qa"><form method="post" action="/finding/${r.id}/qa"><select name="decision"><option value="confirm">Confirm as-is</option><option value="dismiss">Dismiss (not a real issue)</option><option value="correct">Correct status to</option></select><select name="corrected_status"><option value="conflict">conflict</option><option value="consistent">consistent</option><option value="unable_to_verify">unable to verify</option></select><input type="text" name="note" placeholder="note" style="width:140px"><button>Save</button></form>${r.decision ? `<div class="small muted">QA: ${esc(r.decision)}${r.corrected_status ? ` → ${esc(r.corrected_status)}` : ''}${r.qa_note ? ` — ${esc(r.qa_note)}` : ''}</div>` : ''}</div>`;
   return layout(`Run ${id.slice(0, 8)}`, `${skippedNote}<h1>${link(`/client/${client.slug}`, client.name)}<span class="muted" style="font-weight:400"> audit ${esc(run.started_at.replace('T', ' ').slice(0, 16))}</span> <span class="badge">${esc(run.mode)}</span></h1>
 <div class="card"><div class="grid readout"><div class="stat">${run.citations_total}<small>profiles audited</small></div><div class="stat" style="color:var(--ok)">${run.consistent}<small>consistent</small></div><div class="stat" style="color:var(--bad)">${run.conflicts}<small>with conflicts</small></div><div class="stat" style="color:var(--warn)">${run.unverified}<small>unable to verify</small></div><div class="stat">${open}<small>findings awaiting QA</small></div></div>
-<p class="actions">${run.sheet_url ? (run.sheet_url.startsWith('http') ? ext(run.sheet_url, 'Open Google Sheet') : `<span class="small">CSV report: ${esc(run.sheet_url.replace(config.reportsDir, 'reports'))}</span>`) : ''} <form method="post" action="/run/${id}/report" class="inline"><button ${busy(client.slug) ? 'disabled' : ''}>${run.sheet_url ? 'Regenerate report' : 'Generate report'}</button></form> <span class="muted small">Client Action tab = ${conflicts} confirmed conflict(s). Findings still in QA are held back from the client tab.</span></p></div>
+<p class="actions">${run.sheet_url && run.sheet_url.startsWith('http') ? ext(run.sheet_url, 'Open Google Sheet') : ''} <form method="post" action="/run/${id}/report" class="inline"><button ${busy(client.slug) ? 'disabled' : ''}>${files.length ? 'Regenerate report' : 'Generate report'}</button></form> <span class="muted small">Client Action tab = ${conflicts} confirmed conflict(s). Findings still in QA are held back from the client tab.</span></p></div>
+${files.length ? `<h2>Report files</h2><div class="card">${table(['File', 'What it holds', 'Size', ''], files.map(f => [
+  `<span class="mono">${esc(f.name)}</span>`,
+  esc({ 'client-action.csv': 'Confirmed conflicts and the correction to make. This is the tab the client reads.',
+        'citation-inventory.csv': 'Every stored profile with its status and coverage.',
+        'internal-qa.csv': 'Every finding with evidence, confidence and errors.',
+        'README.txt': 'Run summary and anything that was skipped.' }[f.name] || ''),
+  `${(f.bytes / 1024).toFixed(1)} KB`,
+  `<a class="btn secondary small" href="/run/${id}/file/${esc(f.name)}">Download</a>`,
+]))}<p class="muted small" style="margin:10px 0 0">Kept in the database, so they survive a restart and ride the same backup.</p></div>` : ''}
 <p class="tabs">${tab('qa', `QA queue (${open})`)}${tab('action', `Client action (${conflicts})`)}${tab('conflicts', 'All conflicts')}${tab('all', `All findings (${rows.length})`)}</p>
 <div class="card">${table(['Directory / URL', 'Field', 'Status', 'Conf.', 'Canonical', 'Found on profile', 'Reason', filter === 'action' ? 'Suggested correction' : 'QA'], shown.map(r => [`${esc(r.directory)}<div class="small wrap">${ext(r.url, r.url.replace(/^https?:\/\/(www\.)?/, '').slice(0, 60))}</div><div class="small">${link(`/citation/${r.citation_id}?run=${id}`, 'evidence')} <span class="muted">${esc(r.fetch_method || '')}${r.http_status ? ` ${r.http_status}` : ''}</span></div>`, fieldLabel(r.field), `${badge(r.effective_status)}${r.effective_status !== r.status ? `<div class="small muted">raw: ${esc(r.status)}</div>` : ''}`, String(r.confidence), `<span class="wrap">${esc(r.expected)}</span>`, `<span class="wrap">${esc(r.found)}</span>`, `<span class="small">${esc(r.reason || '')}</span>`, filter === 'action' ? esc(suggestion(r)) : qaForm(r)]))}</div>`);
 }
@@ -700,6 +713,18 @@ async function handle(req, res, body) {
     if (p === '/db/download') { getDb().exec('PRAGMA wal_checkpoint(TRUNCATE)'); res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Disposition': 'attachment; filename="citation-audit.sqlite"' }); return res.end(readFileSync(config.dbPath)); }
     if (p === '/health') return json({ ok: true, commit: (process.env.RENDER_GIT_COMMIT || 'local').slice(0, 7), model: config.model, started: STARTED });
     if (p === '/setup') return html(setupPage(null));
+    if ((mm = p.match(/^\/run\/([\w-]+)\/file\/([\w.-]+)$/))) {
+      const f = reportFile(mm[1], mm[2]);
+      if (!f) return html(notFoundPage('That report file no longer exists. Generate the report again from the run page.'), 404);
+      const type = f.name.endsWith('.csv') ? 'text/csv; charset=utf-8' : 'text/plain; charset=utf-8';
+      res.writeHead(200, { 'Content-Type': type, 'Content-Disposition': `attachment; filename="${f.name}"` });
+      return res.end(f.content);
+    }
+    if ((mm = p.match(/^\/run\/([\w-]+)\/files$/))) {
+      const run = runById(mm[1]);
+      if (!run) return html(notFoundPage('That audit run no longer exists.'), 404);
+      return redirect(`/run/${run.id}`);
+    }
     return html(notFoundPage(`No page at ${p}.`), 404);
   }
 
@@ -850,7 +875,13 @@ async function handle(req, res, body) {
       const client = get('SELECT * FROM clients WHERE id = ?', [run.client_id]);
       if (busy(client.slug)) return bounce(`/run/${run.id}`, 'warn', 'Something is already running for this client', 'Wait for it to finish, then try again.');
       if (!run.finished_at) return bounce(`/run/${run.id}`, 'warn', 'That audit has not finished yet', 'Wait for it to complete, then generate the report.');
-      const j = startJob('report', client.slug, async log => { log(`Building 3-tab report for run ${run.id}…`); const r = await writeReport(run, client); log(`${r.kind}: ${r.location}`); return r; });
+      const j = startJob('report', client.slug, async log => {
+        log(`Building the three report tabs for run ${run.id}\u2026`);
+        const r = await writeReport(run, client);
+        log(r.kind === 'google-sheet' ? `Google Sheet: ${r.location}` : 'Stored in the database and ready to download.');
+        await persistNow();
+        return r;
+      });
       return redirect(`/job/${j.id}`);
     }
   }

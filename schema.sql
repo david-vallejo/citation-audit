@@ -106,6 +106,18 @@ CREATE TABLE IF NOT EXISTS qa_decisions (
   decided_at       VARCHAR(32) NOT NULL
 );
 
+-- Generated report files, kept in the database so they survive an ephemeral disk
+-- and ride the same backup as everything else. Served back as downloads.
+CREATE TABLE IF NOT EXISTS report_files (
+  id         VARCHAR(36) PRIMARY KEY,
+  run_id     VARCHAR(36) NOT NULL REFERENCES audit_runs(id),
+  name       VARCHAR(64) NOT NULL,
+  content    TEXT NOT NULL,
+  bytes      INTEGER NOT NULL DEFAULT 0,
+  created_at VARCHAR(32) NOT NULL,
+  UNIQUE (run_id, name)
+);
+
 -- Every Claude call, for the daily caps and the cost readout in the UI.
 CREATE TABLE IF NOT EXISTS llm_usage (
   id            VARCHAR(36) PRIMARY KEY,
@@ -123,3 +135,4 @@ CREATE INDEX IF NOT EXISTS idx_citations_client ON citations(client_id, status);
 CREATE INDEX IF NOT EXISTS idx_findings_run ON findings(run_id, status, needs_qa);
 CREATE INDEX IF NOT EXISTS idx_snapshots_run ON snapshots(run_id);
 CREATE INDEX IF NOT EXISTS idx_llm_usage_at ON llm_usage(at);
+CREATE INDEX IF NOT EXISTS idx_report_files_run ON report_files(run_id);

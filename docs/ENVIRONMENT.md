@@ -15,7 +15,7 @@ carries on with a documented fallback; nothing blocks.
 |---|---|---|
 | `APP_PASSWORD` | Basic auth on the public URL. | The site is open to anyone with the link, running audits on your key. |
 | `GOOGLE_CSE_KEY` + `GOOGLE_CSE_CX` | Finds directory profiles. Free, 100 queries a day, ~9 per client. | Falls back to DuckDuckGo, which blocks automated queries in practice. Discovery returns nothing and you paste profile URLs by hand. |
-| `GH_DB_TOKEN` + `GH_DB_REPO` | Keeps the database across restarts. | Everything is erased when the host restarts, redeploys, or sleeps. |
+| `GH_DB_TOKEN` + `GH_DB_REPO` | Keeps the database across restarts, including every generated report file. | Everything is erased when the host restarts, redeploys, or sleeps, reports included. |
 
 ## Optional
 
@@ -23,7 +23,7 @@ carries on with a documented fallback; nothing blocks.
 |---|---|---|
 | `GOOGLE_PLACES_API_KEY` | Pulls facts from Google Business Profile. Needs Google Cloud billing. | "Refresh canonical facts" reads the client website instead and fills in name, address, phone, hours, year founded and services. Verified to work. |
 | `FETCH_PROXY` + `FETCH_PROXY_KEY` | Reads directories that block plain requests. `scraperapi` or `scrapingbee`. Verified against Yelp, YellowPages, Manta and chamberofcommerce. Yelp costs about 10 credits a page, most others 1. | Those directories fall back to an archived copy or the search snippet, both routed to QA. Anything unreadable becomes "Unable to Verify". |
-| `GOOGLE_SERVICE_ACCOUNT_JSON` | Writes the report to a Google Sheet. | Reports are written as three CSV files instead. |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | Writes the report to a Google Sheet. | Reports are stored as CSV files in the database and downloaded from the run page. |
 
 ## Tuning (all have working defaults)
 

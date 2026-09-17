@@ -2,7 +2,7 @@ import { createSign } from 'node:crypto';
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { config } from '../config.js';
-import { get, update, now } from '../db.js';
+import { get, all, update, now, uuid, getDb } from '../db.js';
 import { effectiveFindings, suggestion } from '../audit.js';
 
 const TABS = ['Client Action', 'Citation Inventory', 'Internal QA'];
@@ -110,14 +110,40 @@ export async function writeGoogleSheet(run, client) {
 // ---- CSV fallback (no Google credentials) ----
 const csv = rows => rows.map(r => r.map(v => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; }).join(',')).join('\n') + '\n';
 
+export const fileName = tab => `${tab.toLowerCase().replace(/[^a-z]+/g, '-')}.csv`;
+
+// Kept in the database, not only on disk: a free host wipes the disk on every
+// restart, and the database is what gets backed up.
 export function writeCsvReport(run, client) {
   const { tabs, meta } = buildTabs(run, client);
-  const dir = join(config.reportsDir, client.slug, run.started_at.slice(0, 19).replace(/[:T]/g, '-'));
-  mkdirSync(dir, { recursive: true });
-  for (const t of TABS) writeFileSync(join(dir, `${t.toLowerCase().replace(/[^a-z]+/g, '-')}.csv`), csv(tabs[t]));
-  writeFileSync(join(dir, 'README.txt'), meta.join('\n') + '\n\nImport each CSV as a tab in Google Sheets (File → Import → Append/Replace).\n');
-  update('audit_runs', run.id, { sheet_url: dir });
-  return dir;
+  const stamp = run.started_at.slice(0, 19).replace(/[:T]/g, '-');
+  const files = TABS.map(t => ({ name: fileName(t), content: csv(tabs[t]) }));
+  files.push({ name: 'README.txt', content: meta.join('\n') + '\n\nImport each CSV as a tab in Google Sheets (File \u2192 Import \u2192 Append/Replace).\n' });
+
+  const db = getDb();
+  for (const f of files) {
+    db.prepare('DELETE FROM report_files WHERE run_id = ? AND name = ?').run(run.id, f.name);
+    db.prepare('INSERT INTO report_files (id, run_id, name, content, bytes, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(uuid(), run.id, f.name, f.content, Buffer.byteLength(f.content), now());
+  }
+
+  // A local copy as well, handy when running the CLI on your own machine.
+  let dir = null;
+  try {
+    dir = join(config.reportsDir, client.slug, stamp);
+    mkdirSync(dir, { recursive: true });
+    for (const f of files) writeFileSync(join(dir, f.name), f.content);
+  } catch { dir = null; }
+
+  update('audit_runs', run.id, { sheet_url: `/run/${run.id}/files` });
+  return dir || `${files.length} files stored in the database`;
+}
+
+export function reportFiles(runId) {
+  return all('SELECT name, bytes, created_at FROM report_files WHERE run_id = ? ORDER BY name', [runId]);
+}
+export function reportFile(runId, name) {
+  return get('SELECT name, content FROM report_files WHERE run_id = ? AND name = ?', [runId, name]);
 }
 
 export async function writeReport(run, client) {
