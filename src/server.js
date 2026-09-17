@@ -418,6 +418,7 @@ function friendlyJobError(j) {
   if (/Could not fetch/i.test(m)) return 'The website could not be read. Check the address, or enter the facts by hand.';
   if (/discovery provider/i.test(m)) return 'The search provider failed. Add GOOGLE_CSE_KEY and GOOGLE_CSE_CX for reliable discovery.';
   if (/Canonical facts incomplete/i.test(m)) return 'Set the canonical name and phone before running an audit.';
+  if (/No profiles to audit/i.test(m)) return 'There are no profiles to check yet. Paste a few profile URLs into the box under the citation inventory, or add a Google search key so discovery can find them.';
   if (/ENOTFOUND|ECONNREFUSED|ETIMEDOUT|fetch failed/i.test(m)) return 'A network request failed. Check the address and try again.';
   return 'The job failed. The technical detail is below.';
 }

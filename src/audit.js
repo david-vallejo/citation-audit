@@ -118,6 +118,13 @@ export async function runAudit(client, { rediscover = false, limit = Infinity, p
   }
   const citations = active().slice(0, limit);
   if (dryRun) return { mode, citations };
+  if (!citations.length) {
+    // Nothing to audit is a dead end, not a result. Say why and what to do about it.
+    const why = mode === 'recheck'
+      ? 'Every stored profile is set to ignored, not this business, or dead.'
+      : `Search discovery returned no profiles${config.discoveryProvider.includes('google-cse') && !(config.googleCse.key && config.googleCse.cx) ? ', and the Google search key is not set so it fell back to DuckDuckGo, which blocks automated queries' : ''}.`;
+    throw new Error(`No profiles to audit. ${why} Add profile URLs by hand with the box under the citation inventory, or set GOOGLE_CSE_KEY and GOOGLE_CSE_CX for reliable discovery.`);
+  }
   const run = insert('audit_runs', { id: uuid(), client_id: client.id, mode, started_at: now(), finished_at: null, citations_total: citations.length, consistent: 0, conflicts: 0, unverified: 0, sheet_url: null });
   log(`Audit run ${run.id} — ${citations.length} citations, ${config.fetchConcurrency} at a time`);
   const results = await mapLimit(citations, config.fetchConcurrency, c => auditOne(run, client, canonical, target, c, log));
