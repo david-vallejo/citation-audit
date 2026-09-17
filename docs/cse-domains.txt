@@ -38,3 +38,6 @@
 *.instagram.com
 *.pinterest.com
 *.youtube.com
+*.americanfenceassociation.com
+*.fencecertified.com
+*.thefencegroup.com

@@ -43,7 +43,11 @@ export const DIRECTORIES = [
   { key: 'apple-maps', host: /(^|\.)maps\.apple\.com$/, profile: /place|\?q=/ },
   { key: 'nicelocal', host: /(^|\.)nicelocal\.com$/, profile: /\// },
   { key: 'yellowpagecity', host: /(^|\.)yellowpagecity\.com$/, profile: /\// },
-  { key: 'fencing-directory', host: /(^|\.)(americanfenceassociation|fencecontractors|fencecompanies)\./, profile: /\// },
+  // Fence-industry directories (verified live; fencecertified + thefencegroup both
+  // surfaced real contractor profiles during discovery testing).
+  { key: 'americanfenceassociation', host: /(^|\.)americanfenceassociation\.com$/, profile: /\/(member|directory|find)/i },
+  { key: 'fencecertified', host: /(^|\.)fencecertified\.com$/, profile: /\/company\// },
+  { key: 'thefencegroup', host: /(^|\.)thefencegroup\.com$/, profile: /\/members\/business\// },
 ];
 
 // Directories worth an explicit `site:` query during discovery (highest-value NAP sources for contractors).
