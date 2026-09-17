@@ -223,6 +223,16 @@ pre.log{
   border-color:var(--line); border-top-color:var(--blue-deep);
 }
 
+/* ---- a control that is off because a key is missing ---- */
+.offfield{position:relative; display:inline-flex; align-items:center}
+.offfield input:disabled{opacity:.45; cursor:not-allowed; padding-right:30px}
+.info{
+  position:absolute; right:8px; width:16px; height:16px; border-radius:50%;
+  border:1px solid var(--blue-deep); color:var(--blue); background:var(--panel-sunk);
+  font:600 11px/14px var(--sans); text-align:center; cursor:help; user-select:none;
+}
+.info:hover,.info:focus{background:var(--blue); color:#04121b; outline:none}
+
 /* ---- canonical table: view state vs edit state ---- */
 table.canon td:last-child{text-align:right; white-space:nowrap; width:1%}
 table.canon .edit{display:none}
@@ -264,7 +274,7 @@ export const setNotice = f => { pendingNotice = f || null; };
 function layout(title, body, { refresh } = {}) {
   const u = usageToday();
   const notice = pendingNotice; pendingNotice = null;
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)} — Citation Audit</title><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">${refresh ? `<meta http-equiv="refresh" content="${refresh}">` : ''}<style>${CSS}</style></head>
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)} — Citation Audit</title><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'> <circle cx='16' cy='16' r='16' fill='%2374d4ff'/> <path d='M9 16.4l4.8 4.9L23 11.4' fill='none' stroke='%230d3b55' stroke-width='3.6' stroke-linecap='round' stroke-linejoin='round'/> </svg>"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">${refresh ? `<meta http-equiv="refresh" content="${refresh}">` : ''}<style>${CSS}</style></head>
 <body><header><a class="brand" href="/">Citation Audit</a><a href="/setup" class="small">Setup check</a><span class="grow"></span><span class="read" title="Daily caps reset at midnight UTC">calls <b>${u.calls}/${u.calls_limit}</b></span><span class="read" title="Daily caps reset at midnight UTC">spend <b>$${u.cost.toFixed(3)}</b> of $${u.cost_limit.toFixed(2)}</span><span class="read">model <b>${esc(config.model)}</b></span><span class="read">search <b>${esc(config.discoveryProvider)}</b></span><span class="read">output <b>${config.serviceAccountJson ? 'Google Sheets' : 'CSV'}</b></span><span class="read">store <b>${persistEnabled ? 'GitHub' : 'ephemeral'}</b></span></header><main>${noticeHtml(notice)}${body}</main></body></html>`;
 }
 
@@ -362,7 +372,9 @@ function clientPage(slug) {
 <form method="post" action="/client/${slug}/audit" class="inline"><button ${dis}>3. Run audit${active ? ` (${active} stored profiles)` : ' (will discover first)'}</button> <label class="inline small" style="display:inline"><input type="checkbox" name="rediscover" value="1"> also re-discover</label> <input type="number" name="limit" placeholder="limit" style="width:70px"></form>
 ${isBusy ? '<span class="muted">a job is running — see below</span>' : ''}</div>
 <p class="muted small">Website ${client.website ? ext(client.website) : 'not set'}<br>Google Business Profile ${client.place_id ? ext(`https://www.google.com/maps/place/?q=place_id:${client.place_id}`, 'linked') : 'not linked'}<br>Sheet ${client.sheet_id ? ext(`https://docs.google.com/spreadsheets/d/${client.sheet_id}`, 'open') : 'not created yet'}</p>
-<form method="post" action="/client/${slug}/set" class="actions"><input type="url" name="website" placeholder="Website address" value="${esc(client.website || '')}" style="width:250px"><input type="text" name="lookup" placeholder="Google Business Profile link" style="width:320px"><button class="secondary">Save</button></form></div>
+<form method="post" action="/client/${slug}/set" class="actions"><input type="url" name="website" placeholder="Website address" value="${esc(client.website || '')}" style="width:250px">${config.placesKey
+  ? `<input type="text" name="lookup" placeholder="Google Business Profile link" style="width:320px">`
+  : `<span class="offfield"><input type="text" placeholder="Google Business Profile link" style="width:320px" disabled><span class="info" tabindex="0" role="note" aria-label="Why this is off" title="Reading a Google Business Profile needs a Google Places API key, which requires a billing account on Google Cloud. Nothing is lost without it: Refresh canonical facts reads the client website and fills in the same fields.">i</span></span>`}<button class="secondary">Save</button></form></div>
 
 <h2>Source of truth</h2><div class="card">${canonicalTable(client, canon)}<p class="muted small" style="margin:12px 0 0">Google Business Profile and the website fill this in. Anything you edit by hand wins and is never overwritten by a refresh.</p></div>${CANON_JS}
 
