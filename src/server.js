@@ -138,6 +138,8 @@ header .brand{
 }
 header .brand:hover{color:var(--ink)}
 header .grow{flex:1; border-left:1px solid var(--line-soft); padding:0}
+header a.read{text-decoration:none}
+header a.read:hover b{color:var(--blue)}
 header .read{font-family:var(--mono); font-size:11.5px; color:var(--faint); gap:5px; padding-top:11px; padding-bottom:11px}
 header .read b{color:var(--muted); font-weight:500}
 main{max-width:1340px; margin:0 auto; padding:26px 22px 72px}
@@ -349,7 +351,7 @@ function layout(title, body, { refresh } = {}) {
   const u = usageToday();
   const notice = pendingNotice; pendingNotice = null;
   return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)} — Citation Audit</title><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'> <circle cx='16' cy='16' r='16' fill='%2374d4ff'/> <path d='M9 16.4l4.8 4.9L23 11.4' fill='none' stroke='%230d3b55' stroke-width='3.6' stroke-linecap='round' stroke-linejoin='round'/> </svg>"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">${refresh ? `<meta http-equiv="refresh" content="${refresh}">` : ''}<style>${CSS}</style></head>
-<body><header><a class="brand" href="/">Citation Audit</a><a href="/setup" class="small">Setup check</a><span class="grow"></span><span class="read" title="Daily caps reset at midnight UTC">calls <b>${u.calls}/${u.calls_limit}</b></span><span class="read" title="Daily caps reset at midnight UTC">spend <b>$${u.cost.toFixed(3)}</b> of $${u.cost_limit.toFixed(2)}</span><span class="read">model <b>${esc(config.model)}</b></span><span class="read">search <b>${esc(config.discoveryProvider)}</b></span><span class="read">output <b>${config.serviceAccountJson ? 'Google Sheets' : 'CSV'}</b></span><span class="read">store <b>${persistEnabled ? 'GitHub' : 'ephemeral'}</b></span></header><main>${noticeHtml(notice)}${body}</main></body></html>`;
+<body><header><a class="brand" href="/">Citation Audit</a><a href="/setup" class="small">Setup check</a><span class="grow"></span><a class="read" href="/setup" title="Daily caps reset at midnight UTC. Click for the full setup check.">calls <b>${u.calls}/${u.calls_limit}</b></a><a class="read" href="/setup" title="Daily caps reset at midnight UTC. Click for the full setup check.">spend <b>$${u.cost.toFixed(3)}</b> of $${u.cost_limit.toFixed(2)}</a><a class="read" href="/setup" title="Click for the full setup check">model <b>${esc(config.model)}</b></a><a class="read" href="/setup" title="Click for the full setup check">search <b>${esc(config.discoveryProvider)}</b></a><a class="read" href="/setup" title="Click for the full setup check">reports <b>${config.serviceAccountJson ? 'Google Sheets' : 'CSV download'}</b></a><a class="read" href="/setup" title="Click for the full setup check">saved <b>${persistEnabled ? 'to GitHub' : 'until restart'}</b></a></header><main>${noticeHtml(notice)}${body}</main></body></html>`;
 }
 
 // ---------- pages ----------
