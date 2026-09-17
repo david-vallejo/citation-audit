@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: citation-audit
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GOOGLE_PLACES_API_KEY
+        sync: false
+      - key: APP_PASSWORD
+        sync: false
+      - key: DISCOVERY_PROVIDER
+        value: google-cse,ddg
+      - key: GOOGLE_CSE_KEY
+        sync: false
+      - key: GOOGLE_CSE_CX
+        sync: false
+      - key: FETCH_PROXY
+        sync: false
+      - key: FETCH_PROXY_KEY
+        sync: false
+      - key: GH_DB_TOKEN
+        sync: false
+      - key: GH_DB_REPO
+        sync: false
+      - key: CLAUDE_MODEL
+        value: claude-haiku-4-5
+      - key: DAILY_CLAUDE_CALLS
+        value: "80"
+      - key: DAILY_COST_LIMIT_USD
+        value: "1.00"
+      - key: DB_PATH
+        value: /tmp/citation-audit.sqlite

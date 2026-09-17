@@ -1,0 +1,119 @@
+import { createSign } from 'node:crypto';
+import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { config } from '../config.js';
+import { get, update, now } from '../db.js';
+import { effectiveFindings, suggestion } from '../audit.js';
+
+const TABS = ['Client Action', 'Citation Inventory', 'Internal QA'];
+const label = s => ({ consistent: 'Consistent', conflict: 'Conflict', unable_to_verify: 'Unable to Verify', dismissed: 'Dismissed (QA)' }[s] || s);
+const fieldLabel = f => ({ name: 'Business Name', address: 'Address', phone: 'Phone', website: 'Website', hours: 'Hours', year_founded: 'Year Founded', services: 'Services', categories: 'Categories', email: 'Email' }[f] || f);
+
+export function buildTabs(run, client) {
+  const rows = effectiveFindings(run.id);
+  const byCitation = new Map();
+  for (const r of rows) { if (!byCitation.has(r.citation_id)) byCitation.set(r.citation_id, []); byCitation.get(r.citation_id).push(r); }
+
+  const action = [['Directory', 'Profile URL', 'Field', 'Currently Listed', 'Should Be', 'Suggested Correction']];
+  for (const r of rows) if (r.effective_status === 'conflict' && !r.qa_open) action.push([r.directory, r.url, fieldLabel(r.field), r.found, r.expected, suggestion(r)]);
+
+  const inv = [['Directory', 'Profile URL', 'Status', 'Conflicting Fields', 'Pending Review', 'Last Checked', 'Discovered Via', 'Discovered On']];
+  for (const [, fs] of byCitation) {
+    const c = fs[0];
+    const conflicts = fs.filter(f => f.effective_status === 'conflict' && !f.qa_open).map(f => fieldLabel(f.field));
+    const pending = fs.filter(f => f.qa_open).length;
+    const status = conflicts.length ? 'conflict' : fs.every(f => f.effective_status === 'unable_to_verify') ? 'unable_to_verify' : 'consistent';
+    inv.push([c.directory, c.url, label(status), conflicts.join(', '), pending ? `${pending} finding(s) in QA` : '', (c.last_audited_at || '').slice(0, 10), c.discovered_via, (c.discovered_at || '').slice(0, 10)]);
+  }
+
+  const qa = [['Directory', 'Profile URL', 'Field', 'Raw Status', 'Effective Status', 'Confidence', 'Needs QA', 'QA Decision', 'QA Note', 'Expected (canonical)', 'Found (cited)', 'Reason', 'Fetch Method', 'HTTP', 'Extraction Confidence', 'Fetch/Extract Error', 'Finding ID']];
+  for (const r of rows) qa.push([r.directory, r.url, fieldLabel(r.field), label(r.status), label(r.effective_status), r.confidence, r.qa_open ? 'YES' : '', r.decision || '', r.qa_note || '', r.expected, r.found, r.reason || '', r.fetch_method || '', r.http_status ?? '', r.extraction_confidence ?? '', r.snapshot_error || '', r.id]);
+
+  const meta = [`${client.name} — Citation Audit`, `Run ${run.id} (${run.mode}) started ${run.started_at}`, `${run.citations_total} profiles: ${run.consistent} consistent, ${run.conflicts} conflict, ${run.unverified} unable to verify`];
+  return { tabs: { [TABS[0]]: action, [TABS[1]]: inv, [TABS[2]]: qa }, meta };
+}
+
+// ---- Google auth (service account, no googleapis dependency) ----
+let tokenCache = { token: null, exp: 0 };
+async function accessToken() {
+  if (tokenCache.token && Date.now() < tokenCache.exp - 60_000) return tokenCache.token;
+  const sa = JSON.parse(readFileSync(config.serviceAccountJson, 'utf8'));
+  const iat = Math.floor(Date.now() / 1000);
+  const b64 = o => Buffer.from(JSON.stringify(o)).toString('base64url');
+  const unsigned = `${b64({ alg: 'RS256', typ: 'JWT' })}.${b64({ iss: sa.client_email, scope: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive', aud: sa.token_uri, iat, exp: iat + 3600 })}`;
+  const sig = createSign('RSA-SHA256').update(unsigned).sign(sa.private_key, 'base64url');
+  const res = await fetch(sa.token_uri, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: `grant_type=${encodeURIComponent('urn:ietf:params:oauth:grant-type:jwt-bearer')}&assertion=${unsigned}.${sig}` });
+  const j = await res.json();
+  if (!res.ok) throw new Error(`Google token: ${j.error_description || j.error}`);
+  tokenCache = { token: j.access_token, exp: Date.now() + j.expires_in * 1000 };
+  return j.access_token;
+}
+
+async function gapi(url, method = 'GET', body) {
+  const res = await fetch(url, { method, headers: { Authorization: `Bearer ${await accessToken()}`, 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(`${method} ${url} → ${res.status}: ${j.error?.message || JSON.stringify(j)}`);
+  return j;
+}
+const SHEETS = 'https://sheets.googleapis.com/v4/spreadsheets';
+
+async function ensureSpreadsheet(client) {
+  if (client.sheet_id) {
+    try { return await gapi(`${SHEETS}/${client.sheet_id}?fields=spreadsheetId,spreadsheetUrl,sheets.properties`); }
+    catch (e) { if (!/404/.test(e.message)) throw e; }
+  }
+  const ss = await gapi(SHEETS, 'POST', { properties: { title: `${client.name} — Citation Audit` }, sheets: TABS.map((t, i) => ({ properties: { title: t, index: i, gridProperties: { frozenRowCount: 1 } } })) });
+  for (const email of config.shareWith) {
+    await gapi(`https://www.googleapis.com/drive/v3/files/${ss.spreadsheetId}/permissions?sendNotificationEmail=false`, 'POST', { role: 'writer', type: 'user', emailAddress: email });
+  }
+  update('clients', client.id, { sheet_id: ss.spreadsheetId, updated_at: now() });
+  return ss;
+}
+
+export async function writeGoogleSheet(run, client) {
+  const { tabs } = buildTabs(run, client);
+  const ss = await ensureSpreadsheet(client);
+  const props = Object.fromEntries(ss.sheets.map(s => [s.properties.title, s.properties]));
+  const requests = [];
+  for (const t of TABS) if (!props[t]) requests.push({ addSheet: { properties: { title: t, gridProperties: { frozenRowCount: 1 } } } });
+  if (requests.length) { await gapi(`${SHEETS}/${ss.spreadsheetId}:batchUpdate`, 'POST', { requests }); return writeGoogleSheet(run, client); }
+  await gapi(`${SHEETS}/${ss.spreadsheetId}/values:batchClear`, 'POST', { ranges: TABS.map(t => `'${t}'!A:Z`) });
+  await gapi(`${SHEETS}/${ss.spreadsheetId}/values:batchUpdate`, 'POST', { valueInputOption: 'RAW', data: TABS.map(t => ({ range: `'${t}'!A1`, values: tabs[t].map(r => r.map(v => v ?? '')) })) });
+  const fmt = [];
+  for (const t of TABS) {
+    const sid = props[t].sheetId, cols = tabs[t][0].length;
+    fmt.push(
+      { repeatCell: { range: { sheetId: sid, startRowIndex: 0, endRowIndex: 1 }, cell: { userEnteredFormat: { textFormat: { bold: true }, backgroundColor: { red: 0.93, green: 0.93, blue: 0.93 } } }, fields: 'userEnteredFormat(textFormat,backgroundColor)' } },
+      { updateSheetProperties: { properties: { sheetId: sid, gridProperties: { frozenRowCount: 1 } }, fields: 'gridProperties.frozenRowCount' } },
+      { autoResizeDimensions: { dimensions: { sheetId: sid, dimension: 'COLUMNS', startIndex: 0, endIndex: cols } } },
+      { repeatCell: { range: { sheetId: sid, startRowIndex: 1 }, cell: { userEnteredFormat: { wrapStrategy: 'WRAP', verticalAlignment: 'TOP' } }, fields: 'userEnteredFormat(wrapStrategy,verticalAlignment)' } },
+    );
+  }
+  const statusCol = 2;
+  for (const [color, text] of [[{ red: 0.99, green: 0.85, blue: 0.85 }, 'Conflict'], [{ red: 0.85, green: 0.95, blue: 0.85 }, 'Consistent'], [{ red: 1, green: 0.95, blue: 0.8 }, 'Unable to Verify']]) {
+    fmt.push({ addConditionalFormatRule: { rule: { ranges: [{ sheetId: props[TABS[1]].sheetId, startRowIndex: 1, startColumnIndex: statusCol, endColumnIndex: statusCol + 1 }], booleanRule: { condition: { type: 'TEXT_EQ', values: [{ userEnteredValue: text }] }, format: { backgroundColor: color } } }, index: 0 } });
+  }
+  await gapi(`${SHEETS}/${ss.spreadsheetId}:batchUpdate`, 'POST', { requests: fmt });
+  update('audit_runs', run.id, { sheet_url: ss.spreadsheetUrl });
+  return ss.spreadsheetUrl;
+}
+
+// ---- CSV fallback (no Google credentials) ----
+const csv = rows => rows.map(r => r.map(v => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; }).join(',')).join('\n') + '\n';
+
+export function writeCsvReport(run, client) {
+  const { tabs, meta } = buildTabs(run, client);
+  const dir = join(config.reportsDir, client.slug, run.started_at.slice(0, 19).replace(/[:T]/g, '-'));
+  mkdirSync(dir, { recursive: true });
+  for (const t of TABS) writeFileSync(join(dir, `${t.toLowerCase().replace(/[^a-z]+/g, '-')}.csv`), csv(tabs[t]));
+  writeFileSync(join(dir, 'README.txt'), meta.join('\n') + '\n\nImport each CSV as a tab in Google Sheets (File → Import → Append/Replace).\n');
+  update('audit_runs', run.id, { sheet_url: dir });
+  return dir;
+}
+
+export async function writeReport(run, client) {
+  if (config.serviceAccountJson) return { kind: 'google-sheet', location: await writeGoogleSheet(run, client) };
+  return { kind: 'csv', location: writeCsvReport(run, client) };
+}
+
+export function runById(id) { return get('SELECT * FROM audit_runs WHERE id = ?', [id]); }
