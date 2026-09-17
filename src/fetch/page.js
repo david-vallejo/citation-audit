@@ -55,17 +55,38 @@ async function direct(url) {
 }
 
 // Layer 2: scraping proxy with a free tier (FETCH_PROXY=scraperapi|scrapingbee + key). Handles most bot walls.
+// These services retry the target internally and still surface a transient 500 fairly often,
+// so a single attempt under-reports what the proxy can actually reach.
 async function proxy(url) {
   const { provider, key } = config.fetchProxy;
   if (!provider || !key) return null;
-  const target = provider === 'scraperapi' ? `https://api.scraperapi.com/?api_key=${key}&url=${encodeURIComponent(url)}&country_code=us`
-    : provider === 'scrapingbee' ? `https://app.scrapingbee.com/api/v1/?api_key=${key}&url=${encodeURIComponent(url)}&render_js=false&country_code=us`
-    : null;
-  if (!target) throw new Error(`unknown FETCH_PROXY "${provider}"`);
-  const res = await fetchWithTimeout(target, { timeout: 70_000 });
-  const html = await res.text();
-  if (!res.ok || looksBlocked(200, html)) throw new Error(`${provider} ${res.status}`);
-  return fromHtml(html, 200, `proxy:${provider}`, url);
+  // Escalate to residential proxies only after a plain attempt fails, so the cheaper
+  // route is tried first. Yelp and BBB generally need the premium tier; most others do not.
+  // country_code is geotargeting and is not available on free plans: sending it makes
+  // every request fail with a 500. Opt in with PROXY_COUNTRY once on a paid plan.
+  const geo = config.proxyCountry ? `&country_code=${config.proxyCountry}` : '';
+  const build = premium => provider === 'scraperapi'
+    ? `https://api.scraperapi.com/?api_key=${key}&url=${encodeURIComponent(url)}${geo}${premium ? '&premium=true' : ''}`
+    : provider === 'scrapingbee'
+      ? `https://app.scrapingbee.com/api/v1/?api_key=${key}&url=${encodeURIComponent(url)}&render_js=false${geo}${premium ? '&premium_proxy=true' : ''}`
+      : null;
+  if (!build(false)) throw new Error(`unknown FETCH_PROXY "${provider}"`);
+  let last = '';
+  for (let attempt = 1; attempt <= config.proxyAttempts; attempt++) {
+    const target = build(attempt > 1);
+    let res, html;
+    try {
+      res = await fetchWithTimeout(target, { timeout: 90_000 });
+      html = await res.text();
+    } catch (e) { last = e.message; if (attempt < config.proxyAttempts) { await sleep(2000 * attempt); continue; } break; }
+    if (res.ok && !looksBlocked(200, html)) return fromHtml(html, 200, `proxy:${provider}${attempt > 1 ? '+premium' : ''}`, url);
+    last = `${provider} ${res.status}`;
+    // 4xx other than 429 means the target really is missing or refused; retrying wastes credits.
+    const retryable = res.status >= 500 || res.status === 429 || res.ok;
+    if (!retryable || attempt === config.proxyAttempts) break;
+    await sleep(2000 * attempt);
+  }
+  throw new Error(last || `${provider} failed`);
 }
 
 // Layer 3: Jina Reader (free, keyless). Works for many mid-tier directories; the big ones block it too.

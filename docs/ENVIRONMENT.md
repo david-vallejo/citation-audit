@@ -22,7 +22,7 @@ carries on with a documented fallback; nothing blocks.
 | Variable | What it does | Without it |
 |---|---|---|
 | `GOOGLE_PLACES_API_KEY` | Pulls facts from Google Business Profile. Needs Google Cloud billing. | "Refresh canonical facts" reads the client website instead and fills in name, address, phone, hours, year founded and services. Verified to work. |
-| `FETCH_PROXY` + `FETCH_PROXY_KEY` | Reads directories that block plain requests. `scraperapi` or `scrapingbee`. | Yelp, YellowPages, BBB, Angi and Manta fall back to an archived copy or the search snippet, both routed to QA. Anything unreadable becomes "Unable to Verify". |
+| `FETCH_PROXY` + `FETCH_PROXY_KEY` | Reads directories that block plain requests. `scraperapi` or `scrapingbee`. Verified against Yelp, YellowPages, Manta and chamberofcommerce. Yelp costs about 10 credits a page, most others 1. | Those directories fall back to an archived copy or the search snippet, both routed to QA. Anything unreadable becomes "Unable to Verify". |
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | Writes the report to a Google Sheet. | Reports are written as three CSV files instead. |
 
 ## Tuning (all have working defaults)
@@ -38,6 +38,8 @@ carries on with a documented fallback; nothing blocks.
 | `FETCH_CONCURRENCY` | `4` | Profiles fetched at once. |
 | `QA_CONFIDENCE_THRESHOLD` | `0.8` | Below this a finding goes to the QA queue instead of the client report. |
 | `WAYBACK_FALLBACK` | `1` | Set `0` to skip the archive fallback. |
+| `PROXY_ATTEMPTS` | `3` | Attempts per page. The first is standard, later ones escalate to residential proxies. |
+| `PROXY_COUNTRY` | empty | Geotargeting. **Leave empty on a ScraperAPI free plan**: sending `country_code` makes every request fail with a 500. |
 | `DB_PATH` | `data/citation-audit.sqlite` | On Render this is `/tmp/citation-audit.sqlite`. |
 
 ## Checking what is active

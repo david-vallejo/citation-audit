@@ -29,6 +29,8 @@ export const config = {
   googleCse: { key: env('GOOGLE_CSE_KEY'), cx: env('GOOGLE_CSE_CX') },
   serpapiKey: env('SERPAPI_KEY'),
   fetchProxy: { provider: env('FETCH_PROXY'), key: env('FETCH_PROXY_KEY') },
+  proxyAttempts: parseInt(env('PROXY_ATTEMPTS', '3'), 10),
+  proxyCountry: env('PROXY_COUNTRY'),
   waybackFallback: env('WAYBACK_FALLBACK', '1') !== '0',
   serviceAccountJson: env('GOOGLE_SERVICE_ACCOUNT_JSON'),
   shareWith: env('SHEET_SHARE_WITH').split(',').map(s => s.trim()).filter(Boolean),
