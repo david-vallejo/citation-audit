@@ -10,8 +10,15 @@ function getClient() {
 
 // $ per million tokens: [input, output]. Cache reads bill at 0.1x input, cache writes at 1.25x.
 const PRICES = { 'claude-haiku-4-5': [1, 5], 'claude-sonnet-5': [2, 10], 'claude-sonnet-4-6': [3, 15], 'claude-opus-5': [5, 25], 'claude-opus-4-8': [5, 25], 'claude-fable-5-1': [10, 50] };
+// The API returns dated ids (claude-haiku-4-5-20251001), so match on the longest
+// price-table key the id starts with rather than requiring an exact hit.
+export function priceFor(model) {
+  if (PRICES[model]) return PRICES[model];
+  const key = Object.keys(PRICES).filter(k => String(model || '').startsWith(k)).sort((a, b) => b.length - a.length)[0];
+  return key ? PRICES[key] : PRICES['claude-opus-5'];
+}
 export function estimateCost(model, u) {
-  const [i, o] = PRICES[model] || PRICES['claude-opus-5'];
+  const [i, o] = priceFor(model);
   return ((u.input_tokens || 0) * i + (u.cache_read_input_tokens || 0) * i * 0.1 + (u.cache_creation_input_tokens || 0) * i * 1.25 + (u.output_tokens || 0) * o) / 1e6;
 }
 export function usageToday() {
@@ -42,6 +49,9 @@ const nullableObject = (props, description) => ({
   ],
   ...(description ? { description } : {}),
 });
+// Plain string, empty when the page doesn't list it. Keeps the parameter out of the
+// union budget (structured outputs allow at most 16 union-typed parameters).
+const blankable = description => ({ type: 'string', ...(description ? { description } : {}) });
 
 export const LISTING_SCHEMA = {
   type: 'object',
@@ -50,12 +60,15 @@ export const LISTING_SCHEMA = {
   properties: {
     is_profile_page: { type: 'boolean', description: 'true if this page is a listing/profile for exactly one business' },
     name: nullable('string'),
-    address: nullableObject({ street: nullable('string'), city: nullable('string'), state: nullable('string'), zip: nullable('string') }),
+    address: nullableObject(
+      { street: blankable(), city: blankable(), state: blankable(), zip: blankable() },
+      'Use "" for any part the page does not show; use null only when no address appears at all',
+    ),
     phone: nullable('string'),
     website: nullable('string'),
     hours: nullableObject(
-      { mon: nullable('string'), tue: nullable('string'), wed: nullable('string'), thu: nullable('string'), fri: nullable('string'), sat: nullable('string'), sun: nullable('string') },
-      'Per-day string exactly as listed, e.g. "8:00 AM - 5:00 PM", "Closed", "Open 24 hours"; null when a day is not listed',
+      { mon: blankable(), tue: blankable(), wed: blankable(), thu: blankable(), fri: blankable(), sat: blankable(), sun: blankable() },
+      'Per-day string exactly as listed, e.g. "8:00 AM - 5:00 PM", "Closed", "Open 24 hours". Use "" for a day the page does not list; use null only when no hours appear at all',
     ),
     year_founded: nullable('integer'),
     services: nullableList(),
@@ -71,6 +84,7 @@ Rules:
 - Only report values that are literally present on the page for the TARGET business. Never infer, guess, or fill from general knowledge. Use null when a value is not on the page.
 - If the page shows several businesses (search results, category page), set is_profile_page=false and extract the entry that matches the target, if any.
 - Copy values verbatim (do not reformat phone numbers, do not expand abbreviations). Hours: one string per day as printed.
+- Inside the address and hours objects use an empty string "" for anything the page does not show. Use null for the whole object only when the page shows no address / no hours at all.
 - year_founded: only from explicit statements like "Established 1998", "Founded in 2005", "In business since 2010", "Years in business: 12" (convert relative claims using the page's evident date only if stated).
 - services: the named services/offerings the listing itself enumerates (not review text). categories: the directory's category labels for the listing.
 - Structured data (JSON-LD) on the page is the most reliable source when present.

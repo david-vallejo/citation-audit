@@ -136,6 +136,9 @@ export function normHours(h) {
     for (const [k, v] of Object.entries(h)) {
       const d = DAY_ALIASES[k.toLowerCase()];
       if (!d) continue;
+      // "" / null mean the source simply doesn't list that day: leave it absent
+      // so comparison treats it as "not listed" rather than "could not parse".
+      if (v == null || (typeof v === 'string' && !v.trim())) continue;
       grid[d] = Array.isArray(v) ? v : parseHourRange(v);
     }
   }
