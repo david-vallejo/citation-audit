@@ -73,10 +73,28 @@ export async function diagnose({ callClaude = true } = {}) {
   } catch (e) {
     out.push(fail('Outbound fetching', (e.message || '').slice(0, 200), 'The host may be blocking outbound requests.'));
   }
-  if (!config.fetchProxy.provider) {
-    out.push(warn('Scraping proxy', 'Not set: Yelp, YellowPages, BBB and Angi will return 403', 'Optional. Add a free ScraperAPI key as FETCH_PROXY=scraperapi and FETCH_PROXY_KEY=… to verify those.'));
+  if (!config.fetchProxy.provider || !config.fetchProxy.key) {
+    out.push(warn('Scraping proxy', 'Not set, so Yelp, YellowPages, BBB, Angi and Manta cannot be read', 'Optional but high value. Sign up free at scraperapi.com, then set FETCH_PROXY=scraperapi and FETCH_PROXY_KEY to the dashboard key.'));
+  } else if (!callClaude) {
+    out.push(warn('Scraping proxy', `${config.fetchProxy.provider} configured, not tested on this run`, 'Run the full check to fetch a real blocked page through it.'));
   } else {
-    out.push(ok('Scraping proxy', `${config.fetchProxy.provider} configured`));
+    // Prove it against a site that reliably refuses plain requests. Costs one credit.
+    const probe = 'https://www.yelp.com/biz/anvil-fence-company-garden-city';
+    try {
+      const t = Date.now();
+      const p = await fetchPage(probe);
+      const secs = ((Date.now() - t) / 1000).toFixed(1);
+      if (p.method.startsWith('proxy') && p.text.length > 1500) {
+        out.push(ok('Scraping proxy', `${config.fetchProxy.provider} read a live Yelp page in ${secs}s (${p.text.length.toLocaleString()} chars). Blocked directories are now readable.`));
+      } else if (p.method.startsWith('proxy')) {
+        out.push(warn('Scraping proxy', `${config.fetchProxy.provider} responded but returned little content (${p.text.length} chars)`, 'The key works; that page may be an interstitial. Try an audit and check the evidence page.'));
+      } else {
+        out.push(fail('Scraping proxy', `Fell through to "${p.method}" instead of the proxy. ${p.error || ''}`.slice(0, 300),
+          'Usually a wrong or exhausted key. Check FETCH_PROXY is exactly "scraperapi" (or "scrapingbee") and that the dashboard still shows credits.'));
+      }
+    } catch (e) {
+      out.push(fail('Scraping proxy', (e.message || '').slice(0, 250), 'Check the key on your scraperapi.com dashboard.'));
+    }
   }
 
   // 5. Report output
