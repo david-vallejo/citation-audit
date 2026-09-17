@@ -3,7 +3,7 @@
 import { createServer } from 'node:http';
 import { readFileSync, existsSync } from 'node:fs';
 import { config, AUDIT_FIELDS, PHASE2_FIELDS } from './config.js';
-import { all, get, insert, update, uuid, now, getClient, getCanonical, setCanonical, getDb } from './db.js';
+import { all, get, insert, update, uuid, now, getClient, getCanonical, setCanonical, getDb, transaction } from './db.js';
 import { refreshCanonical, runAudit, effectiveFindings, latestRun, suggestion, displayCanonical } from './audit.js';
 import { discover, addCitation, inventory } from './discovery/index.js';
 import { classifyUrl } from './discovery/directories.js';
@@ -15,6 +15,10 @@ import { diagnose } from './diagnose.js';
 
 const PORT = process.env.PORT || config.qaPort;
 const PASSWORD = process.env.APP_PASSWORD;
+// The Google Business Profile link is always stored on the client, so pasting it once
+// keeps it. Reading facts *from* that profile needs the Places API, which needs Google
+// Cloud billing; that half stays dormant until GOOGLE_PLACES_API_KEY is set.
+const GBP_READS = Boolean(config.placesKey);
 const STARTED = new Date().toISOString();
 
 // ---------- jobs (in-process, polled by the browser) ----------
@@ -223,9 +227,16 @@ pre.log{
   border-color:var(--line); border-top-color:var(--blue-deep);
 }
 
+th a{color:var(--blue); text-decoration:none}
+th a:hover{text-decoration:underline}
+th a.sorted{color:var(--ink)}
+th a.sorted::after{content:" \\2193"; color:var(--blue)}
+.btn.small,button.small{padding:4px 10px; font-size:12px}
+
 /* ---- a control that is off because a key is missing ---- */
 .offfield{position:relative; display:inline-flex; align-items:center}
-.offfield input:disabled{opacity:.45; cursor:not-allowed; padding-right:30px}
+.offfield input{padding-right:30px}
+.offfield input:disabled{opacity:.45; cursor:not-allowed}
 .info{
   position:absolute; right:8px; width:16px; height:16px; border-radius:50%;
   border:1px solid var(--blue-deep); color:var(--blue); background:var(--panel-sunk);
@@ -279,21 +290,83 @@ function layout(title, body, { refresh } = {}) {
 }
 
 // ---------- pages ----------
-function homePage() {
-  const clients = all('SELECT * FROM clients ORDER BY name');
-  const rows = clients.map(c => {
-    const run = latestRun(c.id);
-    const inv = get("SELECT COUNT(*) n FROM citations WHERE client_id = ? AND status = 'active'", [c.id]).n;
-    return [link(`/client/${c.slug}`, c.name), c.website ? ext(c.website, c.website.replace(/^https?:\/\//, '')) : '', String(inv), run ? `${link(`/run/${run.id}`, run.started_at.slice(0, 10))}<div class="small muted">${run.conflicts} conflict, ${run.unverified} unverified</div>` : '<span class="muted">never</span>'];
-  });
+const CLIENT_SORTS = {
+  name: { label: 'Client', cmp: (a, b) => a.name.localeCompare(b.name) },
+  recent: { label: 'Last audit', cmp: (a, b) => (b.run?.started_at || '').localeCompare(a.run?.started_at || '') },
+  conflicts: { label: 'Conflicts', cmp: (a, b) => (b.run?.conflicts ?? -1) - (a.run?.conflicts ?? -1) },
+  profiles: { label: 'Profiles', cmp: (a, b) => b.inv - a.inv },
+};
+
+function homePage(sort = 'name') {
+  if (!CLIENT_SORTS[sort]) sort = 'name';
+  const clients = all('SELECT * FROM clients').map(c => ({
+    ...c,
+    run: latestRun(c.id),
+    inv: get("SELECT COUNT(*) n FROM citations WHERE client_id = ? AND status = 'active'", [c.id]).n,
+  }));
+  clients.sort(CLIENT_SORTS[sort].cmp);
   const firstRun = !clients.length;
-  return layout('Clients', `${firstRun ? '<div class="card"><b>First time here?</b> Run the <a href="/setup">setup check</a> to confirm your keys work, then add a client below. After adding one, use the buttons in order: refresh facts, discover, run audit.</div>' : ''}<h1>Clients</h1><div class="card">${table(['Client', 'Website', 'Known profiles', 'Last audit'], rows)}</div>
+  const th = key => `<a href="/?sort=${key}" class="${sort === key ? 'sorted' : ''}">${CLIENT_SORTS[key].label}</a>`;
+  const rows = clients.map(c => [
+    link(`/client/${c.slug}`, c.name),
+    c.website ? ext(c.website, c.website.replace(/^https?:\/\//, '')) : '',
+    String(c.inv),
+    c.run
+      ? `${link(`/run/${c.run.id}`, c.run.started_at.slice(0, 10))}<div class="small muted">${c.run.conflicts} conflict, ${c.run.unverified} unverified</div>`
+      : '<span class="muted">never</span>',
+    `<a class="btn secondary small" href="/client/${c.slug}/delete">Delete</a>`,
+  ]);
+  return layout('Clients', `${firstRun ? '<div class="card"><b>First time here?</b> Run the <a href="/setup">setup check</a> to confirm your keys work, then add a client below.</div>' : ''}<h1>Clients</h1><div class="card">
+${table([th('name'), 'Website', th('profiles'), th('recent'), ''], rows)}
+${clients.length > 1 ? `<p class="muted small" style="margin:10px 0 0">Sorted by ${esc(CLIENT_SORTS[sort].label.toLowerCase())}. Click another heading to change it.</p>` : ''}</div>
 <h2>Add a client</h2><div class="card"><form method="post" action="/client/add"><div class="grid">
 <div><label>Slug (short id)</label><input type="text" name="slug" required placeholder="anvilfence"></div>
-<div><label>Business name</label><input type="text" name="name" required placeholder="Anvil Fence Co"></div>
+<div><label>Business name</label><input type="text" name="name" required placeholder="Anvil Fence Company"></div>
 <div><label>Website</label><input type="url" name="website" placeholder="https://anvilfence.com"></div>
-<div><label>Google Business Profile (optional)</label><input type="text" name="lookup" placeholder="Paste the Google Maps link, or leave empty"></div>
-</div><p class="actions"><button>Add client</button></p><p class="muted small">The website is the only field that matters. After adding the client, "Refresh canonical facts" reads that site and fills in the name, address, phone, hours, year founded and services. ${config.placesKey ? 'The Google link is a second source if you want it.' : 'Linking a Google Business Profile is optional and needs a Google Cloud billing account, so leave it empty for now.'}</p></form></div>`);
+<div><label>Google Business Profile (optional)</label><input type="text" name="gbp_url" placeholder="Paste the Google Maps link"></div>
+</div><p class="actions"><button>Add client</button></p><p class="muted small">After adding the client, "Refresh canonical facts" reads the website and fills in the name, address, phone, hours, year founded and services.</p></form></div>`);
+}
+
+// Everything that belongs to one client, newest dependants first so foreign keys hold.
+function clientFootprint(clientId) {
+  const n = (sql, p = [clientId]) => get(sql, p).n;
+  return {
+    citations: n("SELECT COUNT(*) n FROM citations WHERE client_id = ?"),
+    runs: n("SELECT COUNT(*) n FROM audit_runs WHERE client_id = ?"),
+    findings: n("SELECT COUNT(*) n FROM findings WHERE run_id IN (SELECT id FROM audit_runs WHERE client_id = ?)"),
+    facts: n("SELECT COUNT(*) n FROM canonical_facts WHERE client_id = ?"),
+  };
+}
+
+function deleteClientPage(slug) {
+  const client = get('SELECT * FROM clients WHERE slug = ?', [slug]);
+  if (!client) return null;
+  const f = clientFootprint(client.id);
+  return layout(`Delete ${client.name}`, `<h1>Delete ${esc(client.name)}?</h1>
+<div class="card"><p>This removes the client and everything recorded for it. It cannot be undone.</p>
+${table(['What', 'Count'], [
+  ['Known profiles in the inventory', String(f.citations)],
+  ['Audit runs and their evidence', String(f.runs)],
+  ['Findings and QA decisions', String(f.findings)],
+  ['Canonical facts', String(f.facts)],
+])}
+<p class="muted small">Any report already written to Google Sheets or to the reports folder is left alone.</p>
+<p class="actions"><form method="post" action="/client/${esc(slug)}/delete" class="inline"><input type="hidden" name="confirm" value="${esc(slug)}"><button class="danger">Delete ${esc(client.name)}</button></form>
+<a class="btn secondary" href="/client/${esc(slug)}">Keep it</a></p></div>`);
+}
+
+function deleteClient(clientId) {
+  return transaction(() => {
+    const d = sql => getDb().prepare(sql).run(clientId);
+    d('DELETE FROM qa_decisions WHERE finding_id IN (SELECT f.id FROM findings f JOIN audit_runs r ON r.id = f.run_id WHERE r.client_id = ?)');
+    d('DELETE FROM findings WHERE run_id IN (SELECT id FROM audit_runs WHERE client_id = ?)');
+    d('DELETE FROM snapshots WHERE run_id IN (SELECT id FROM audit_runs WHERE client_id = ?)');
+    d('DELETE FROM audit_runs WHERE client_id = ?');
+    d('DELETE FROM citations WHERE client_id = ?');
+    d('DELETE FROM canonical_facts WHERE client_id = ?');
+    d('DELETE FROM discovery_log WHERE client_id = ?');
+    d('DELETE FROM clients WHERE id = ?');
+  });
 }
 
 function canonicalTable(client, canon) {
@@ -367,14 +440,12 @@ function clientPage(slug) {
   const dis = isBusy ? 'disabled' : '';
   return layout(client.name, `<h1>${esc(client.name)} <span class="muted small">${esc(slug)}</span></h1>
 <div class="card"><div class="actions">
-<form method="post" action="/client/${slug}/canonical/refresh" class="inline"><button ${dis}>1. Refresh canonical facts</button></form>
-<form method="post" action="/client/${slug}/discover" class="inline"><button ${dis} class="${active ? 'secondary' : ''}">2. Discover profiles</button></form>
-<form method="post" action="/client/${slug}/audit" class="inline"><button ${dis}>3. Run audit${active ? ` (${active} stored profiles)` : ' (will discover first)'}</button> <label class="inline small" style="display:inline"><input type="checkbox" name="rediscover" value="1"> also re-discover</label> <input type="number" name="limit" placeholder="limit" style="width:70px"></form>
+<form method="post" action="/client/${slug}/canonical/refresh" class="inline"><button ${dis}>Refresh canonical facts</button></form>
+<form method="post" action="/client/${slug}/discover" class="inline"><button ${dis} class="${active ? 'secondary' : ''}">Discover profiles</button></form>
+<form method="post" action="/client/${slug}/audit" class="inline"><button ${dis}>Run audit${active ? ` (${active} stored profiles)` : ' (will discover first)'}</button> <label class="inline small" style="display:inline"><input type="checkbox" name="rediscover" value="1"> also re-discover</label> <input type="number" name="limit" placeholder="limit" style="width:70px"></form>
 ${isBusy ? '<span class="muted">a job is running — see below</span>' : ''}</div>
-<p class="muted small">Website ${client.website ? ext(client.website) : 'not set'}<br>Google Business Profile ${client.place_id ? ext(`https://www.google.com/maps/place/?q=place_id:${client.place_id}`, 'linked') : 'not linked'}<br>Sheet ${client.sheet_id ? ext(`https://docs.google.com/spreadsheets/d/${client.sheet_id}`, 'open') : 'not created yet'}</p>
-<form method="post" action="/client/${slug}/set" class="actions"><input type="url" name="website" placeholder="Website address" value="${esc(client.website || '')}" style="width:250px">${config.placesKey
-  ? `<input type="text" name="lookup" placeholder="Google Business Profile link" style="width:320px">`
-  : `<span class="offfield"><input type="text" placeholder="Google Business Profile link" style="width:320px" disabled><span class="info" tabindex="0" role="note" aria-label="Why this is off" title="Reading a Google Business Profile needs a Google Places API key, which requires a billing account on Google Cloud. Nothing is lost without it: Refresh canonical facts reads the client website and fills in the same fields.">i</span></span>`}<button class="secondary">Save</button></form></div>
+<p class="muted small">Website ${client.website ? ext(client.website) : 'not set'}<br>Google Business Profile ${client.gbp_url ? ext(client.gbp_url, 'open') : 'not set'}${client.place_id ? ' (linked to Google)' : ''}<br>Sheet ${client.sheet_id ? ext(`https://docs.google.com/spreadsheets/d/${client.sheet_id}`, 'open') : 'not created yet'}</p>
+<form method="post" action="/client/${slug}/set" class="actions"><input type="url" name="website" placeholder="Website address" value="${esc(client.website || '')}" style="width:250px"><span class="offfield"><input type="text" name="gbp_url" placeholder="Google Business Profile link" value="${esc(client.gbp_url || '')}" style="width:330px">${GBP_READS ? '' : `<span class="info" tabindex="0" role="note" aria-label="About this field" title="Saved and kept here for reference. Pulling the name, address, phone and hours out of the profile needs a Google Places API key, which requires Google Cloud billing. Until then, Refresh canonical facts reads the client website instead.">i</span>`}</span><button class="secondary">Save</button></form></div>
 
 <h2>Source of truth</h2><div class="card">${canonicalTable(client, canon)}<p class="muted small" style="margin:12px 0 0">Google Business Profile and the website fill this in. Anything you edit by hand wins and is never overwritten by a refresh.</p></div>${CANON_JS}
 
@@ -438,16 +509,36 @@ function friendlyJobError(j) {
 function jobPage(id) {
   const j = jobs.get(id);
   if (!j) return null;
-  let next = '';
-  if (j.done && !j.error) {
-    if (j.kind === 'audit' && j.result?.id) next = `<p><a class="btn" href="/run/${j.result.id}">Open run → QA queue</a></p>`;
-    else if (j.kind === 'report' && j.result?.location) next = `<p>${j.result.kind === 'google-sheet' ? `<a class="btn" href="${esc(j.result.location)}" target="_blank">Open Google Sheet</a>` : `CSV written to <code>${esc(j.result.location.replace(config.reportsDir, 'reports'))}</code>`}</p>`;
-    else next = `<p><a class="btn" href="/client/${j.slug}">Back to client</a></p>`;
-  }
-  const errBox = j.error ? `<div class="notice error"><button class="x" onclick="this.parentNode.remove()" title="Dismiss" aria-label="Dismiss">&times;</button><b>${esc(friendlyJobError(j))}</b><div class="detail">${esc(j.error)}</div></div>` : '';
-  return layout(`${j.kind} job`, `${errBox}<h1>${esc(j.kind)} job for ${link(`/client/${j.slug}`, j.slug)} ${j.done ? (j.error ? '<span class="badge conflict">failed</span>' : '<span class="badge consistent">done</span>') : '<span class="badge">running…</span>'}</h1>
-<pre class="log" id="log">${esc(j.log.join('\n'))}</pre>${next}
-<script>const done=${j.done};if(!done){const t=setInterval(async()=>{const r=await fetch('/job/${id}/log');const j=await r.json();document.getElementById('log').textContent=j.log.join('\\n');if(j.done){clearInterval(t);location.reload()}},1500)}</script>`);
+  // Where a finished job should land. Success sends you straight there instead of
+  // parking on a log you have to read and dismiss yourself.
+  const destination = j.error ? null
+    : j.kind === 'audit' && j.result?.id ? `/run/${j.result.id}`
+    : j.kind === 'report' && j.result?.kind === 'google-sheet' ? j.result.location
+    : `/client/${j.slug}`;
+  const manual = j.done && !j.error && destination
+    ? `<p><a class="btn" href="${esc(destination)}">Continue</a> <span class="muted small">Taking you there now.</span></p>` : '';
+  const errBox = j.error
+    ? `<div class="notice error"><button class="x" onclick="this.parentNode.remove()" title="Dismiss" aria-label="Dismiss">&times;</button><b>${esc(friendlyJobError(j))}</b><div class="detail">${esc(j.error)}</div></div>`
+      + `<p><a class="btn secondary" href="/client/${j.slug}">Back to ${esc(j.slug)}</a></p>`
+    : '';
+  const running = !j.done;
+  return layout(`${j.kind} job`, `${errBox}<h1>${esc(j.kind === 'canonical' ? 'Reading the source of truth' : j.kind === 'discover' ? 'Finding profiles' : j.kind === 'audit' ? 'Auditing profiles' : 'Building the report')} for ${link(`/client/${j.slug}`, j.slug)} ${j.done ? (j.error ? '<span class="badge conflict">failed</span>' : '<span class="badge consistent">done</span>') : '<span class="badge">working</span>'}</h1>
+${running ? '<p class="muted small">This can take a minute. You will be taken to the results automatically when it finishes.</p>' : ''}
+<pre class="log" id="log">${esc(j.log.join('\n'))}</pre>${manual}
+<script>
+(function () {
+  var done = ${j.done}, dest = ${destination ? JSON.stringify(destination) : 'null'};
+  if (done) { if (dest) setTimeout(function () { location.href = dest; }, 700); return; }
+  var log = document.getElementById('log');
+  var t = setInterval(function () {
+    fetch('/job/${id}/log').then(function (r) { return r.json(); }).then(function (j) {
+      log.textContent = j.log.join('\n');
+      log.scrollTop = log.scrollHeight;
+      if (j.done) { clearInterval(t); location.reload(); }
+    }).catch(function () {});
+  }, 1200);
+})();
+</script>`);
 }
 
 
@@ -518,7 +609,11 @@ async function handle(req, res, body) {
   let mm;
 
   if (m === 'GET') {
-    if (p === '/') return html(homePage());
+    if (p === '/') return html(homePage(url.searchParams.get('sort') || 'name'));
+    if ((mm = p.match(/^\/client\/([\w-]+)\/delete$/))) {
+      const pg = deleteClientPage(mm[1]);
+      return pg ? html(pg) : html(notFoundPage(`There is no client called "${mm[1]}".`), 404);
+    }
     if ((mm = p.match(/^\/client\/([\w-]+)$/))) {
       if (!get('SELECT id FROM clients WHERE slug = ?', [mm[1]])) return html(notFoundPage(`There is no client called "${mm[1]}".`), 404);
       return html(clientPage(mm[1]));
@@ -546,6 +641,15 @@ async function handle(req, res, body) {
         return html(setupPage(null));
       }
     }
+    if ((mm = p.match(/^\/client\/([\w-]+)\/delete$/))) {
+      const client = get('SELECT * FROM clients WHERE slug = ?', [mm[1]]);
+      if (!client) return html(notFoundPage('That client no longer exists.'), 404);
+      if (f.confirm !== client.slug) return bounce(`/client/${client.slug}`, 'error', 'Delete was not confirmed', 'Nothing was removed.');
+      if (busy(client.slug)) return bounce(`/client/${client.slug}`, 'warn', 'Something is still running for this client', 'Wait for it to finish, then delete.');
+      deleteClient(client.id);
+      schedulePersist();
+      return bounce('/', 'ok', `Deleted ${client.name}`, 'The client and all of its audit history are gone.');
+    }
     if (p === '/client/add') {
       const rawSlug = (f.slug || '').trim();
       const slug = rawSlug.toLowerCase().replace(/[^a-z0-9-]/g, '');
@@ -553,12 +657,12 @@ async function handle(req, res, body) {
       if (!slug) return bounce('/', 'error', 'A slug is required', rawSlug ? `"${rawSlug}" has no letters or numbers to use. A slug is a short id like "anvilfence".` : 'A slug is a short id like "anvilfence". It is only used in the URL.');
       if (get('SELECT id FROM clients WHERE slug = ?', [slug])) return bounce('/', 'error', `The slug "${slug}" is already taken`, 'Pick a different short id, or open the existing client from the list above.');
       if (f.website?.trim() && !/^https?:\/\/[^\s.]+\.[^\s]+$/i.test(f.website.trim())) return bounce('/', 'error', 'That website address does not look valid', `Received "${f.website.trim()}". Include the full address, for example https://anvilfence.com`);
-      insert('clients', { id: uuid(), slug, name: f.name.trim(), website: f.website?.trim() || null, place_id: null, sheet_id: null, created_at: now(), updated_at: now() });
+      insert('clients', { id: uuid(), slug, name: f.name.trim(), website: f.website?.trim() || null, place_id: null, gbp_url: f.gbp_url?.trim() || null, sheet_id: null, created_at: now(), updated_at: now() });
       schedulePersist();
-      if (f.lookup?.trim()) {
-        if (!config.placesKey) return bounce(`/client/${slug}`, 'ok', 'Client added, and the Google link was ignored', 'Reading Google Business Profile needs a paid Google Cloud key, which is not set. Click "Refresh canonical facts" instead: it reads the website and fills in every field.');
+      if (f.gbp_url?.trim()) {
+        if (!config.placesKey) return bounce(`/client/${slug}`, 'ok', `Added ${f.name.trim()}`, 'The Google link is saved. Click "Refresh canonical facts" to fill in the details from the website.');
         const client = getClient(slug);
-        const j = startJob('canonical', slug, log => refreshCanonical(client, { log, lookup: f.lookup.trim() }));
+        const j = startJob('canonical', slug, log => refreshCanonical(client, { log, lookup: f.gbp_url.trim() }));
         return redirect(`/job/${j.id}`);
       }
       return bounce(`/client/${slug}`, 'ok', `Added ${f.name.trim()}`, 'Next: set the canonical facts below, either with "Refresh canonical facts" or by typing them into the Override column.');
@@ -566,15 +670,21 @@ async function handle(req, res, body) {
     if ((mm = p.match(/^\/client\/([\w-]+)\/set$/))) {
       const client = getClient(mm[1]);
       if (f.website?.trim() && !/^https?:\/\/[^\s.]+\.[^\s]+$/i.test(f.website.trim())) return bounce(`/client/${client.slug}`, 'error', 'That website address does not look valid', `Received "${f.website.trim()}". Include the full address, for example https://anvilfence.com`);
-      update('clients', client.id, { website: f.website?.trim() || null, updated_at: now() });
+      const gbp = (f.gbp_url || '').trim();
+      if (gbp && !/^https?:\/\//i.test(gbp) && !/^[A-Za-z0-9_-]{25,}$/.test(gbp)) {
+        return bounce(`/client/${client.slug}`, 'error', 'That Google Business Profile link does not look valid', `Received "${gbp}". Open the business in Google Maps and paste the address bar.`);
+      }
+      const changed = gbp !== (client.gbp_url || '');
+      update('clients', client.id, { website: f.website?.trim() || null, gbp_url: gbp || null, updated_at: now() });
+      if (changed) update('clients', client.id, { place_id: null, updated_at: now() });
       schedulePersist();
-      if (f.lookup?.trim()) {
-        if (!config.placesKey) return bounce(`/client/${client.slug}`, 'warn', 'Google lookup is not switched on', 'Reading Google Business Profile needs GOOGLE_PLACES_API_KEY, which requires a billing account on Google Cloud. You do not need it: click "Refresh canonical facts" and the website is read instead.');
-        update('clients', client.id, { place_id: null, updated_at: now() });
-        const j = startJob('canonical', client.slug, log => refreshCanonical(getClient(client.slug), { log, lookup: f.lookup.trim() }));
+      if (gbp && changed && config.placesKey) {
+        const j = startJob('canonical', client.slug, log => refreshCanonical(getClient(client.slug), { log, lookup: gbp }));
         return redirect(`/job/${j.id}`);
       }
-      return bounce(`/client/${client.slug}`, 'ok', 'Saved', '');
+      return bounce(`/client/${client.slug}`, 'ok', 'Saved', gbp && !config.placesKey
+        ? 'The Google link is stored. Reading facts from it needs a Places API key; until then use "Refresh canonical facts" to read the website.'
+        : '');
     }
     if ((mm = p.match(/^\/client\/([\w-]+)\/canonical$/))) {
       const client = getClient(mm[1]);
@@ -598,9 +708,9 @@ async function handle(req, res, body) {
     if ((mm = p.match(/^\/client\/([\w-]+)\/canonical\/refresh$/))) {
       const client = getClient(mm[1]);
       if (busy(client.slug)) return bounce(`/client/${client.slug}`, 'warn', 'Something is already running for this client', 'Wait for it to finish, then try again.');
-      if (!client.place_id && !client.website) return bounce(`/client/${client.slug}`, 'error', 'Add the website first', 'Put the client\u2019s website in the box below and press Save. The refresh reads that site to fill in every field.');
+      if (!client.place_id && !client.website && !client.gbp_url) return bounce(`/client/${client.slug}`, 'error', 'Add the website first', 'Put the client\u2019s website in the box below and press Save. The refresh reads that site to fill in every field.');
       if (!config.anthropicKey && client.website) return bounce(`/client/${client.slug}`, 'error', 'Claude API key is not set', 'Reading the website needs ANTHROPIC_API_KEY. Add it in your host\u2019s environment settings, then run the setup check.');
-      const j = startJob('canonical', client.slug, log => refreshCanonical(client, { log }));
+      const j = startJob('canonical', client.slug, log => refreshCanonical(client, { log, lookup: config.placesKey ? client.gbp_url : null }));
       return redirect(`/job/${j.id}`);
     }
     if ((mm = p.match(/^\/client\/([\w-]+)\/discover$/))) {

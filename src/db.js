@@ -12,7 +12,21 @@ export function getDb() {
   db = new DatabaseSync(config.dbPath);
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
   db.exec(readFileSync(join(TOOL_DIR, 'schema.sql'), 'utf8'));
+  migrate(db);
   return db;
+}
+
+// Columns added after the first release. CREATE TABLE IF NOT EXISTS will not add them
+// to an existing database, so bring old files forward here. Each entry is idempotent.
+const ADDED_COLUMNS = [
+  ['clients', 'gbp_url', 'VARCHAR(700)'],
+  ['citations', 'search_snippet', 'TEXT'],
+];
+function migrate(d) {
+  for (const [table, column, type] of ADDED_COLUMNS) {
+    const cols = d.prepare(`PRAGMA table_info(${table})`).all().map(c => c.name);
+    if (!cols.includes(column)) d.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+  }
 }
 
 export const uuid = () => randomUUID();

@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS clients (
   name        TEXT NOT NULL,
   website     TEXT,
   place_id    TEXT,
+  gbp_url     VARCHAR(700),
   sheet_id    TEXT,
   created_at  VARCHAR(32) NOT NULL,
   updated_at  VARCHAR(32) NOT NULL
