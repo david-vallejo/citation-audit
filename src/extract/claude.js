@@ -21,10 +21,20 @@ function estimateCost(model, u) {
   const [i, o] = priceFor(model);
   return ((u.input_tokens || 0) * i + (u.cache_read_input_tokens || 0) * i * 0.1 + (u.cache_creation_input_tokens || 0) * i * 1.25 + (u.output_tokens || 0) * o) / 1e6;
 }
+// Today's tally counts from midnight UTC, or from the latest reset marker if one was
+// set today. A reset is a row, not a deletion, so the cost history stays whole.
 export function usageToday() {
   const day = new Date().toISOString().slice(0, 10);
-  const r = get('SELECT COUNT(*) AS calls, COALESCE(SUM(cost_usd), 0) AS cost, COALESCE(SUM(input_tokens + cache_read + cache_write), 0) AS input_tokens FROM llm_usage WHERE at >= ?', [`${day}T00:00:00`]);
-  return { day, calls: r.calls, cost: r.cost, input_tokens: r.input_tokens, calls_limit: config.dailyClaudeCalls, cost_limit: config.dailyCostLimitUsd };
+  const dayStart = `${day}T00:00:00`;
+  const reset = get("SELECT MAX(at) AS at FROM llm_usage WHERE purpose = 'reset' AND at >= ?", [dayStart]);
+  const since = reset?.at || dayStart;
+  const r = get("SELECT COUNT(*) AS calls, COALESCE(SUM(cost_usd), 0) AS cost, COALESCE(SUM(input_tokens + cache_read + cache_write), 0) AS input_tokens FROM llm_usage WHERE at > ? AND purpose <> 'reset'", [since]);
+  return { day, calls: r.calls, cost: r.cost, input_tokens: r.input_tokens, calls_limit: config.dailyClaudeCalls, cost_limit: config.dailyCostLimitUsd, reset_at: reset?.at || null };
+}
+export function resetUsageToday() {
+  const before = usageToday();
+  insert('llm_usage', { id: uuid(), purpose: 'reset', model: '-', input_tokens: 0, output_tokens: 0, cache_read: 0, cache_write: 0, cost_usd: 0, at: now() });
+  return before;
 }
 export class BudgetError extends Error {}
 function assertBudget() {

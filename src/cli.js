@@ -8,6 +8,7 @@ import { writeReport, runById } from './report/sheets.js';
 import { parseAddress, normHours, normServices } from './compare/normalize.js';
 import { AUDIT_FIELDS, PHASE2_FIELDS } from './config.js';
 import { diagnose } from './diagnose.js';
+import { usageToday, resetUsageToday } from './extract/claude.js';
 
 const argv = process.argv.slice(2);
 const flags = {}; const pos = [];
@@ -33,6 +34,7 @@ citation-audit — commands
   run <slug>                                     canonical (if missing) → discover (if empty) → audit → report
   serve                                          start the web UI
   check                                          verify every key works (makes one ~\$0.001 Claude call)
+  usage [reset]                                  today's Claude tally, or reset it for the day
 `;
 
 function parseValue(field, v) {
@@ -124,6 +126,11 @@ try {
       const r = await diagnose();
       for (const c of r.checks) console.log(`  ${c.status.toUpperCase().padEnd(4)} ${c.name.padEnd(22)} ${c.detail}${c.fix ? `\n       → ${c.fix}` : ''}`);
       console.log(r.blocking ? `\n${r.blocking} blocking problem(s).` : '\nNo blocking problems.');
+      break;
+    }
+    case 'usage': {
+      if (rest[0] === 'reset') { const b = resetUsageToday(); log(`reset; was ${b.calls} calls, $${b.cost.toFixed(3)}`); }
+      const u = usageToday(); log(`${u.calls}/${u.calls_limit} calls, $${u.cost.toFixed(3)}/$${u.cost_limit.toFixed(2)}${u.reset_at ? ` (since reset at ${u.reset_at})` : ''}`);
       break;
     }
     case 'serve': await import('./server.js'); break;
