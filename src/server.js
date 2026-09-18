@@ -315,7 +315,7 @@ function layout(title, body, { refresh } = {}) {
 const CLIENT_SORTS = {
   name: { label: 'Client', cmp: (a, b) => a.name.localeCompare(b.name) },
   recent: { label: 'Last audit', cmp: (a, b) => (b.run?.started_at || '').localeCompare(a.run?.started_at || '') },
-  conflicts: { label: 'Conflicts', cmp: (a, b) => (b.run?.conflicts ?? -1) - (a.run?.conflicts ?? -1) },
+  conflicts: { label: 'Inconsistencies', cmp: (a, b) => (b.run?.conflicts ?? -1) - (a.run?.conflicts ?? -1) },
   profiles: { label: 'Profiles', cmp: (a, b) => b.inv - a.inv },
 };
 
@@ -329,23 +329,31 @@ function homePage(sort = 'name') {
   clients.sort(CLIENT_SORTS[sort].cmp);
   const firstRun = !clients.length;
   const th = key => `<a href="/?sort=${key}" class="${sort === key ? 'sorted' : ''}">${CLIENT_SORTS[key].label}</a>`;
+  // What is actually wrong for this client, from its latest audit: which directory,
+  // which field, and whether a person still has to look at it.
+  const inconsistencies = c => {
+    if (!c.run?.finished_at) return '<span class="muted">not audited yet</span>';
+    const rows = effectiveFindings(c.run.id).filter(r => r.effective_status === 'conflict');
+    if (!rows.length) return `<span class="badge consistent">All matched</span>${c.run.unverified ? `<div class="small muted">${c.run.unverified} could not be read</div>` : ''}`;
+    const byDir = new Map();
+    for (const r of rows) { if (!byDir.has(r.directory)) byDir.set(r.directory, []); byDir.get(r.directory).push(fieldLabel(r.field).toLowerCase()); }
+    const items = [...byDir].map(([d, fields]) => `${d}: ${fields.join(', ')}`);
+    const pending = rows.filter(r => r.qa_open).length;
+    return `<span class="badge conflict">${byDir.size} mismatched</span>
+<div class="small" style="margin-top:4px">${esc(items.slice(0, 4).join('; '))}${items.length > 4 ? `; and ${items.length - 4} more` : ''}</div>
+<div class="small muted">${pending ? `${pending} awaiting review. ` : ''}${link(`/run/${c.run.id}?filter=conflicts`, 'See details')}</div>`;
+  };
   const rows = clients.map(c => [
     link(`/client/${c.slug}`, c.name),
     c.website ? ext(c.website, c.website.replace(/^https?:\/\//, '')) : '',
     String(c.inv),
-    c.run
-      ? `${link(`/run/${c.run.id}`, c.run.started_at.slice(0, 10))}<div class="small muted">${c.run.conflicts} conflict, ${c.run.unverified} unverified</div>`
-      : '<span class="muted">never</span>',
+    c.run ? link(`/run/${c.run.id}`, c.run.started_at.slice(0, 10)) : '<span class="muted">never</span>',
+    inconsistencies(c),
     `<a class="btn secondary small" href="/client/${c.slug}/delete">Delete</a>`,
   ]);
-  const totals = {
-    profiles: clients.reduce((n, c) => n + c.inv, 0),
-    conflicts: clients.reduce((n, c) => n + (c.run?.conflicts || 0), 0),
-    audits: get('SELECT COUNT(*) n FROM audit_runs WHERE finished_at IS NOT NULL').n,
-  };
   return layout('Clients', `${firstRun ? '<div class="card"><b>First time here?</b> Run the <a href="/setup">setup check</a> to confirm your keys work, then add a client below.</div>' : ''}<h1>Clients</h1>
-${clients.length ? `<div class="card"><div class="grid readout"><div class="stat">${clients.length}<small>client${clients.length === 1 ? '' : 's'}</small></div><div class="stat">${totals.profiles}<small>profiles tracked</small></div><div class="stat" style="color:${totals.conflicts ? 'var(--bad)' : 'var(--ok)'}">${totals.conflicts}<small>profiles with conflicts, latest audits</small></div><div class="stat">${totals.audits}<small>audits run</small></div></div></div>` : ''}<div class="card">
-${table([th('name'), 'Website', th('profiles'), th('recent'), ''], rows)}
+<div class="card">
+${table([th('name'), 'Website', th('profiles'), th('recent'), th('conflicts'), ''], rows)}
 ${clients.length > 1 ? `<p class="muted small" style="margin:10px 0 0">Sorted by ${esc(CLIENT_SORTS[sort].label.toLowerCase())}. Click another heading to change it.</p>` : ''}</div>
 <h2>Add a client</h2><div class="card"><form method="post" action="/client/add"><div class="grid">
 <div><label>Slug (short id)</label><input type="text" name="slug" required placeholder="anvilfence"></div>
