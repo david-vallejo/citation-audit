@@ -234,6 +234,15 @@ pre.log.live::after{content:"\\2588"; color:var(--accent); animation:blink 1.1s 
 .qa select{padding-right:24px; background-position:calc(100% - 12px) 12px,calc(100% - 7px) 12px}
 .qa button{padding:4px 11px; font-size:12px}
 
+/* ---- a section that folds away; the summary line looks like any other section heading ---- */
+details.fold{margin:32px 0 0}
+details.fold summary{list-style:none; cursor:pointer; font-size:13px; font-weight:600; color:var(--ink); padding-bottom:6px; border-bottom:1px solid var(--rule); margin-bottom:10px; display:flex; align-items:baseline; gap:10px}
+details.fold summary::-webkit-details-marker{display:none}
+details.fold summary::before{content:"\\25B8"; color:var(--muted); font-size:11px; flex:none; transition:transform .12s}
+details.fold[open] summary::before{transform:rotate(90deg)}
+details.fold summary .muted{font-weight:400}
+details.fold summary:hover{color:var(--accent)}
+
 /* ---- a field that is switched off, with its explanation ---- */
 .offfield{position:relative; display:inline-flex; align-items:center}
 .offfield input{padding-right:30px}
@@ -435,13 +444,13 @@ function inventoryHtml(client, inv, dis = '') {
     `<span class="wrap">${ext(c.url)}</span>${c.notes ? `<div class="muted small">${esc(c.notes)}</div>` : ''}`,
     `<a class="btn secondary small" href="${esc(c.url)}" target="_blank" rel="noopener">Open</a>`,
     badge(c.status),
-    c.last_result ? badge(c.last_result) : '',
+    c.last_result ? `<span class="badge ${esc(c.last_result)}">${esc({ consistent: 'Matched', conflict: 'Mismatched', unable_to_verify: 'Unable to verify' }[c.last_result] || c.last_result)}</span>` : '',
     `<span class="nowrap">${esc((c.last_audited_at || '').slice(0, 10))}</span>`,
     `<span class="nowrap">${esc(c.discovered_via)}</span> <span class="muted nowrap">${esc(c.discovered_at.slice(0, 10))}</span>`,
     `<form method="post" action="/citation/${c.id}/status" class="inline"><select name="status" onchange="this.form.submit()"><option ${c.status === 'active' ? 'selected' : ''} value="active">active</option><option ${c.status === 'ignored' ? 'selected' : ''} value="ignored">ignore</option><option ${c.status === 'not_client' ? 'selected' : ''} value="not_client">not this business</option><option ${c.status === 'dead' ? 'selected' : ''} value="dead">dead link</option></select></form>`,
   ]);
   return `<div id="inventory" data-count="${inv.length}"><h2>Citation inventory${inv.length ? ` <span class="muted small">${inv.length} known, ${active} active, re-used on every run</span>` : ''}</h2><div class="card">${inv.length
-    ? table(['Directory', 'Profile URL', '', 'Status', 'Last result', 'Last audited', 'Found via', ''], rows)
+    ? table(['Directory', 'Profile URL', '', 'Status', 'Result', 'Last audited', 'Found via', ''], rows)
     : `<p class="muted small" style="margin:0 0 10px">No profiles stored yet. "Discover profiles" searches for them, or paste one below.</p>`}
 <form method="post" action="/client/${client.slug}/citation/add" class="actions"><input type="url" name="url" placeholder="Add a profile URL manually (https://www.yelp.com/biz/…)" style="width:480px" required><button class="secondary" ${dis}>Add</button></form></div></div>`;
 }
@@ -511,7 +520,7 @@ ${runs.length ? `<h2>Audit runs</h2><div class="card">${table(['Started', 'Mode'
 
 ${inventoryHtml(client, inv, dis)}
 
-${log.length ? `<h2>Discovery log</h2><div class="card">${table(['When', 'Provider', 'Query', 'Results', 'New'], log.map(l => [esc(l.ran_at.replace('T', ' ').slice(0, 16)), esc(l.provider), esc(l.query), String(l.results_count), String(l.new_citations)]))}</div>` : ''}`);
+${log.length ? `<details class="fold"><summary>Discovery log <span class="muted">${log.length} search${log.length === 1 ? '' : 'es'} run for this client. Each row is one Google query, how many results came back, and how many were new profiles.</span></summary><div class="card">${table(['When', 'Provider', 'Query', 'Results', 'New'], log.map(l => [esc(l.ran_at.replace('T', ' ').slice(0, 16)), esc(l.provider), esc(l.query), String(l.results_count), String(l.new_citations)]))}</div></details>` : ''}`);
 }
 
 function runPage(id, filter = 'qa') {

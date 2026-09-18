@@ -85,7 +85,7 @@ export async function discover(client, canonical, { provider = config.discoveryP
       const c = classifyUrl(r.url, clientHost);
       if (!c || c.kind === 'own-site' || c.kind === 'noise' || c.kind === 'directory-nonprofile') continue;
       if (!matchesBusiness(r)) { log(`  · not this business: ${r.url}`); continue; }
-      const { created } = addCitation(client.id, r.url, c.directory, provider, { notes: c.kind === 'other' ? 'Unlisted source; matched by name/phone in search snippet' : null, snippet: [r.title, r.snippet].filter(Boolean).join(' — ') });
+      const { created } = addCitation(client.id, r.url, c.directory, provider, { notes: c.kind === 'other' ? 'Not one of the known directories; kept because its title or address names the business' : null, snippet: [r.title, r.snippet].filter(Boolean).join(' — ') });
       if (created) { newHere++; log(`  + ${c.directory}: ${r.url}`); }
     }
     added += newHere;
