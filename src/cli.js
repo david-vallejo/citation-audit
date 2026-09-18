@@ -130,3 +130,4 @@ try {
     default: console.log(HELP);
   }
 } catch (e) { console.error(`error: ${e.message}`); process.exit(1); }
+if (cmd !== 'serve') process.exit(0);

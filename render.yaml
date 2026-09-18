@@ -18,7 +18,7 @@ services:
       - key: DAILY_COST_LIMIT_USD
         value: "1.00"
       - key: DISCOVERY_PROVIDER
-        value: google-cse,ddg
+        value: scraperapi-google,ddg
       - key: DB_PATH
         value: /tmp/citation-audit.sqlite
       # Add later in the Environment tab when you have them:

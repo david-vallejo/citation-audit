@@ -54,7 +54,8 @@ export const DIRECTORIES = [
 export const PRIORITY_KEYS = ['yelp', 'yellowpages', 'bbb', 'angi', 'homeadvisor', 'houzz', 'facebook', 'thumbtack', 'porch', 'mapquest', 'manta', 'nextdoor', 'buildzoom', 'superpages'];
 export const PRIORITY_SITES = { yelp: 'yelp.com', yellowpages: 'yellowpages.com', bbb: 'bbb.org', angi: 'angi.com', homeadvisor: 'homeadvisor.com', houzz: 'houzz.com', facebook: 'facebook.com', thumbtack: 'thumbtack.com', porch: 'porch.com', mapquest: 'mapquest.com', manta: 'manta.com', nextdoor: 'nextdoor.com', buildzoom: 'buildzoom.com', superpages: 'superpages.com' };
 
-const NOISE_HOSTS = /(^|\.)(google\.[a-z.]+|wikipedia\.org|amazon\.com|indeed\.com|glassdoor\.com|zillow\.com|realtor\.com|reddit\.com|quora\.com|duckduckgo\.com|bing\.com\/search|apple\.com|microsoft\.com)$/;
+// Hosts that mention businesses but are not citations: job boards, government lookups, bid aggregators.
+const NOISE_HOSTS = /(^|\.)(google\.[a-z.]+|wikipedia\.org|amazon\.com|indeed\.com|glassdoor\.com|ziprecruiter\.com|zillow\.com|realtor\.com|reddit\.com|quora\.com|duckduckgo\.com|apple\.com|microsoft\.com|fcc\.report|fmcsa\.dot\.gov|[a-z]+bids\.com)$/;
 
 export function classifyUrl(url, clientHost) {
   let u;

@@ -5,10 +5,14 @@ const MAX_TEXT = 40_000;
 
 export async function fetchWithTimeout(url, { timeout = 20_000, headers = {} } = {}) {
   const ctrl = new AbortController();
+  // The timer stays armed after the headers arrive so a body that trickles in is cut
+  // off too; clearing it on success would guard only the first byte. unref lets a CLI
+  // exit without waiting on it, and firing after a finished read is a harmless no-op.
   const t = setTimeout(() => ctrl.abort(), timeout);
+  t.unref?.();
   try {
     return await fetch(url, { signal: ctrl.signal, redirect: 'follow', headers: { 'User-Agent': UA, Accept: 'text/html,application/xhtml+xml,*/*;q=0.8', 'Accept-Language': 'en-US,en;q=0.9', ...headers } });
-  } finally { clearTimeout(t); }
+  } catch (e) { clearTimeout(t); throw e; }
 }
 
 export function extractJsonLd(html) {

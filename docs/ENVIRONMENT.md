@@ -14,7 +14,8 @@ carries on with a documented fallback; nothing blocks.
 | Variable | What it does | Without it |
 |---|---|---|
 | `APP_PASSWORD` | Basic auth on the public URL. | The site is open to anyone with the link, running audits on your key. |
-| `GOOGLE_CSE_KEY` + `GOOGLE_CSE_CX` | Finds directory profiles. Free, 100 queries a day, ~9 per client. | Falls back to DuckDuckGo, which blocks automated queries in practice. Discovery returns nothing and you paste profile URLs by hand. |
+| `FETCH_PROXY` + `FETCH_PROXY_KEY` (ScraperAPI) | Also powers discovery: real Google results through ScraperAPI, picked automatically. About 9 searches per client; the credit counter did not move in testing. | Falls back to DuckDuckGo, which blocks automated queries in practice. Discovery returns nothing and you paste profile URLs by hand. |
+| `GOOGLE_CSE_KEY` + `GOOGLE_CSE_CX` | Legacy. Google's Custom Search JSON API, only for projects that already have access. Google refuses new projects. | Nothing lost when the ScraperAPI key is set. |
 | `GH_DB_TOKEN` + `GH_DB_REPO` | Keeps the database across restarts, including every generated report file. | Everything is erased when the host restarts, redeploys, or sleeps, reports included. |
 
 ## Optional

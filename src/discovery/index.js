@@ -5,8 +5,9 @@ import { classifyUrl, PRIORITY_KEYS, PRIORITY_SITES } from './directories.js';
 import * as ddg from './providers/ddg.js';
 import * as cse from './providers/google-cse.js';
 import * as serp from './providers/serpapi.js';
+import * as serpGoogle from './providers/scraperapi-google.js';
 
-const PROVIDERS = { ddg, 'google-cse': cse, serpapi: serp };
+const PROVIDERS = { 'scraperapi-google': serpGoogle, ddg, 'google-cse': cse, serpapi: serp };
 
 export function buildQueries(canonical, client) {
   const name = canonical.name?.value || client.name;
@@ -32,13 +33,38 @@ export function addCitation(clientId, url, directory, via, extra = {}) {
 
 // provider may be a comma-separated failover chain, e.g. "google-cse,ddg": when one provider errors, the next takes over.
 export async function discover(client, canonical, { provider = config.discoveryProvider, log = console.log, maxQueries = Infinity } = {}) {
-  const chain = String(provider).split(',').map(s => s.trim()).filter(Boolean);
-  for (const name of chain) if (!PROVIDERS[name]) throw new Error(`Unknown discovery provider "${name}" (ddg | google-cse | serpapi)`);
+  let chain = String(provider).split(',').map(s => s.trim()).filter(Boolean);
+  // When the ScraperAPI key is present, real Google results are available without any
+  // Google Cloud setup. Put that first unless the chain names it already, so an older
+  // DISCOVERY_PROVIDER value in the host's environment does not have to be edited.
+  if (serpGoogle.available() && !chain.includes('scraperapi-google')) chain = ['scraperapi-google', ...chain];
+  for (const name of chain) if (!PROVIDERS[name]) throw new Error(`Unknown discovery provider "${name}" (scraperapi-google | google-cse | ddg | serpapi)`);
+  log(`Discovery providers, in order: ${chain.join(' → ')}`);
   let idx = 0;
   const current = () => chain[idx];
   const clientHost = normUrlHost(client.website || canonical.website?.value);
   const phone = canonical.phone?.value ? normPhone(canonical.phone.value) : null;
+  // A result has to name this business, not just any fence company in the same town.
+  // "site:yelp.com" queries return competitors too, and the audit would then spend
+  // credits reading them and flag every field as a conflict. Match on the words that
+  // distinguish the business, not the industry or the city it shares with everyone.
+  const GENERIC = new Set(['fence', 'fences', 'fencing', 'company', 'co', 'llc', 'inc', 'corp', 'corporation', 'the', 'and', 'of', 'for', 'services', 'service', 'contractor', 'contractors', 'construction', 'gate', 'gates', 'install', 'installation', 'repair']);
+  const addrVal = canonical.address?.value;
+  const place = typeof addrVal === 'object' ? `${addrVal?.city || ''} ${addrVal?.state || ''}` : String(addrVal || '');
+  const placeTokens = new Set(place.toLowerCase().split(/\W+/).filter(Boolean));
   const nameTokens = (canonical.name?.value || client.name).toLowerCase().split(/\W+/).filter(t => t.length > 2);
+  const distinctive = nameTokens.filter(t => !GENERIC.has(t) && !placeTokens.has(t));
+  const namePhrase = nameTokens.join(' ');
+  const clean = str => { try { str = decodeURIComponent(str); } catch { /* keep raw */ } return str.toLowerCase().replace(/[-_+.%/]/g, ' '); };
+  const matchesBusiness = r => {
+    // The snippet echoes whatever was searched for, so a competitor's page still "mentions"
+    // the client there. The URL slug and the page title do not lie; require the match in those.
+    const strong = clean(`${r.title} ${r.url}`);
+    const anywhere = clean(`${r.title} ${r.snippet} ${r.url}`);
+    if (phone && anywhere.replace(/\D/g, '').includes(phone)) return true;
+    if (distinctive.length) return distinctive.some(t => strong.includes(t));
+    return strong.includes(namePhrase);
+  };
   const queries = buildQueries(canonical, client).slice(0, maxQueries);
   let added = 0, seen = 0;
   for (const query of queries) {
@@ -58,10 +84,7 @@ export async function discover(client, canonical, { provider = config.discoveryP
       seen++;
       const c = classifyUrl(r.url, clientHost);
       if (!c || c.kind === 'own-site' || c.kind === 'noise' || c.kind === 'directory-nonprofile') continue;
-      const blob = `${r.title} ${r.snippet}`.toLowerCase();
-      const mentionsPhone = phone && blob.replace(/\D/g, '').includes(phone);
-      const mentionsName = nameTokens.filter(t => blob.includes(t)).length >= Math.min(2, nameTokens.length);
-      if (c.kind === 'other' && !mentionsPhone && !mentionsName) continue;
+      if (!matchesBusiness(r)) { log(`  · not this business: ${r.url}`); continue; }
       const { created } = addCitation(client.id, r.url, c.directory, provider, { notes: c.kind === 'other' ? 'Unlisted source; matched by name/phone in search snippet' : null, snippet: [r.title, r.snippet].filter(Boolean).join(' — ') });
       if (created) { newHere++; log(`  + ${c.directory}: ${r.url}`); }
     }

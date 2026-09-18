@@ -60,8 +60,22 @@ export async function diagnose({ callClaude = true } = {}) {
 
   // 3. Discovery provider
   const chain = String(config.discoveryProvider).split(',').map(s => s.trim()).filter(Boolean);
-  if (chain.includes('google-cse') && !(config.googleCse.key && config.googleCse.cx)) {
-    out.push(warn('Search discovery', `Chain is "${config.discoveryProvider}" but GOOGLE_CSE_KEY/CX are missing, so it falls back to DuckDuckGo`, 'DuckDuckGo rate-limits after a few queries. Add a Programmable Search key for reliable discovery.'));
+  const viaScraper = config.fetchProxy.provider === 'scraperapi' && Boolean(config.fetchProxy.key);
+  if (viaScraper && callClaude) {
+    try {
+      const { search } = await import('./discovery/providers/scraperapi-google.js');
+      const t = Date.now();
+      const hits = await search('"Anvil Fence Company" Boise ID');
+      out.push(hits.length
+        ? ok('Search discovery', `Google results through ScraperAPI: ${hits.length} for a test query in ${((Date.now() - t) / 1000).toFixed(1)}s. No Google Cloud setup needed.`)
+        : warn('Search discovery', 'ScraperAPI Google search answered but returned no results for the test query', 'Usually transient. Try the check again.'));
+    } catch (e) {
+      out.push(fail('Search discovery', (e.message || '').slice(0, 200), 'Check the ScraperAPI key and that the dashboard still shows credits.'));
+    }
+  } else if (viaScraper) {
+    out.push(warn('Search discovery', 'ScraperAPI Google search is configured, not tested on this run', 'Run the full check to make a live search.'));
+  } else if (chain.includes('google-cse') && !(config.googleCse.key && config.googleCse.cx)) {
+    out.push(warn('Search discovery', `Chain is "${config.discoveryProvider}" but no search key is set, so it falls back to DuckDuckGo`, 'DuckDuckGo rate-limits after a few queries. Adding a ScraperAPI key turns on real Google results with no other setup.'));
   } else {
     out.push(ok('Search discovery', `Provider chain: ${config.discoveryProvider}`));
   }
