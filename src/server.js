@@ -505,6 +505,25 @@ document.addEventListener('keydown', function (e) {
 });
 </script>`;
 
+// Rendered on its own so a running job can refresh just this part of the page.
+function inventoryHtml(client, inv, dis = '') {
+  const active = inv.filter(c => c.status === 'active').length;
+  const rows = inv.map(c => [
+    `<a href="${esc(c.url)}" target="_blank" rel="noopener" style="text-decoration:none"><b>${esc(c.directory)}</b></a>`,
+    `<span class="wrap">${ext(c.url)}</span>${c.notes ? `<div class="muted small">${esc(c.notes)}</div>` : ''}`,
+    `<a class="btn secondary small" href="${esc(c.url)}" target="_blank" rel="noopener">Open</a>`,
+    badge(c.status),
+    c.last_result ? badge(c.last_result) : '',
+    `<span class="nowrap">${esc((c.last_audited_at || '').slice(0, 10))}</span>`,
+    `<span class="nowrap">${esc(c.discovered_via)}</span> <span class="muted nowrap">${esc(c.discovered_at.slice(0, 10))}</span>`,
+    `<form method="post" action="/citation/${c.id}/status" class="inline"><select name="status" onchange="this.form.submit()"><option ${c.status === 'active' ? 'selected' : ''} value="active">active</option><option ${c.status === 'ignored' ? 'selected' : ''} value="ignored">ignore</option><option ${c.status === 'not_client' ? 'selected' : ''} value="not_client">not this business</option><option ${c.status === 'dead' ? 'selected' : ''} value="dead">dead link</option></select></form>`,
+  ]);
+  return `<div id="inventory" data-count="${inv.length}"><h2>Citation inventory${inv.length ? ` <span class="muted small">${inv.length} known, ${active} active, re-used on every run</span>` : ''}</h2><div class="card">${inv.length
+    ? table(['Directory', 'Profile URL', '', 'Status', 'Last result', 'Last audited', 'Found via', ''], rows)
+    : `<p class="muted small" style="margin:0 0 10px">No profiles stored yet. "Discover profiles" searches for them, or paste one below.</p>`}
+<form method="post" action="/client/${client.slug}/citation/add" class="actions"><input type="url" name="url" placeholder="Add a profile URL manually (https://www.yelp.com/biz/…)" style="width:480px" required><button class="secondary" ${dis}>Add</button></form></div></div>`;
+}
+
 function clientPage(slug, watching = null) {
   const client = getClient(slug);
   const live = [...jobs.values()].filter(j => j.slug === slug && !j.done);
@@ -516,7 +535,15 @@ function clientPage(slug, watching = null) {
   var t = setInterval(function () {
     fetch('/job/${live[0].id}/log').then(function (r) { return r.json(); }).then(function (j) {
       if (j.log && j.log.length) last.textContent = j.log[j.log.length - 1];
-      if (j.done) { clearInterval(t); location.href = '/client/${esc(slug)}?watching=${live[0].id}'; }
+      if (j.done) { clearInterval(t); location.href = '/client/${esc(slug)}?watching=${live[0].id}'; return; }
+      // New profiles appear as discovery finds them. Only swap the block when the count
+      // changes, so a URL being typed into the add box is not wiped mid-keystroke.
+      return fetch('/client/${esc(slug)}/inventory').then(function (r) { return r.text(); }).then(function (html) {
+        var cur = document.getElementById('inventory'), tmp = document.createElement('div');
+        tmp.innerHTML = html;
+        var next = tmp.firstElementChild;
+        if (cur && next && next.dataset.count !== cur.dataset.count) cur.replaceWith(next);
+      });
     }).catch(function () {});
   }, 2000);
 })();
@@ -544,10 +571,7 @@ function clientPage(slug, watching = null) {
 
 ${runs.length ? `<h2>Audit runs</h2><div class="card">${table(['Started', 'Mode', 'Profiles', 'Consistent', 'Conflicts', 'Unverified', 'Report'], runs.map(r => [link(`/run/${r.id}`, r.started_at.replace('T', ' ').slice(0, 16)), esc(r.mode), String(r.citations_total), String(r.consistent), String(r.conflicts), String(r.unverified), r.sheet_url && r.sheet_url.startsWith('http') ? ext(r.sheet_url, 'Google Sheet') : reportFiles(r.id).length ? link(`/run/${r.id}`, 'Download') : (r.finished_at ? `<form method="post" action="/run/${r.id}/report" class="inline"><button class="secondary" ${dis}>Generate</button></form>` : '<span class="muted">running…</span>')]))}</div>` : ''}
 
-<h2>Citation inventory${inv.length ? ` <span class="muted small">${inv.length} known, ${active} active, re-used on every run</span>` : ''}</h2><div class="card">${inv.length ? `
-${table(['Directory', 'Profile URL', 'Status', 'Last result', 'Last audited', 'Found via', ''], inv.map(c => [esc(c.directory), `<span class="wrap">${ext(c.url)}</span>${c.notes ? `<div class="muted small">${esc(c.notes)}</div>` : ''}`, badge(c.status), c.last_result ? badge(c.last_result) : '', `<span class="nowrap">${esc((c.last_audited_at || '').slice(0, 10))}</span>`, `<span class="nowrap">${esc(c.discovered_via)}</span> <span class="muted nowrap">${esc(c.discovered_at.slice(0, 10))}</span>`,
-  `<form method="post" action="/citation/${c.id}/status" class="inline"><select name="status" onchange="this.form.submit()"><option ${c.status === 'active' ? 'selected' : ''} value="active">active</option><option ${c.status === 'ignored' ? 'selected' : ''} value="ignored">ignore</option><option ${c.status === 'not_client' ? 'selected' : ''} value="not_client">not this business</option><option ${c.status === 'dead' ? 'selected' : ''} value="dead">dead link</option></select></form>`]))}` : `<p class="muted small" style="margin:0 0 10px">No profiles stored yet. "Discover profiles" searches for them, or paste one below.</p>`}
-<form method="post" action="/client/${slug}/citation/add" class="actions"><input type="url" name="url" placeholder="Add a profile URL manually (https://www.yelp.com/biz/…)" style="width:480px" required><button class="secondary">Add</button></form></div>
+${inventoryHtml(client, inv, dis)}
 
 ${log.length ? `<h2>Discovery log</h2><div class="card">${table(['When', 'Provider', 'Query', 'Results', 'New'], log.map(l => [esc(l.ran_at.replace('T', ' ').slice(0, 16)), esc(l.provider), esc(l.query), String(l.results_count), String(l.new_citations)]))}</div>` : ''}`);
 }
@@ -729,6 +753,11 @@ async function handle(req, res, body) {
     if ((mm = p.match(/^\/client\/([\w-]+)\/delete$/))) {
       const pg = deleteClientPage(mm[1]);
       return pg ? html(pg) : html(notFoundPage(`There is no client called "${mm[1]}".`), 404);
+    }
+    if ((mm = p.match(/^\/client\/([\w-]+)\/inventory$/))) {
+      const client = get('SELECT * FROM clients WHERE slug = ?', [mm[1]]);
+      if (!client) return html('', 404);
+      return html(inventoryHtml(client, inventory(client.id), busy(client.slug) ? 'disabled' : ''));
     }
     if ((mm = p.match(/^\/client\/([\w-]+)$/))) {
       if (!get('SELECT id FROM clients WHERE slug = ?', [mm[1]])) return html(notFoundPage(`There is no client called "${mm[1]}".`), 404);
