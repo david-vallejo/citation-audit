@@ -535,7 +535,7 @@ function clientPage(slug, watching = null) {
   var t = setInterval(function () {
     fetch('/job/${live[0].id}/log').then(function (r) { return r.json(); }).then(function (j) {
       if (j.log && j.log.length) last.textContent = j.log[j.log.length - 1];
-      if (j.done) { clearInterval(t); location.href = '/client/${esc(slug)}?watching=${live[0].id}'; return; }
+      if (j.done) { clearInterval(t); location.href = j.next || '/client/${esc(slug)}?watching=${live[0].id}'; return; }
       // New profiles appear as discovery finds them. Only swap the block when the count
       // changes, so a URL being typed into the add box is not wiped mid-keystroke.
       return fetch('/client/${esc(slug)}/inventory').then(function (r) { return r.text(); }).then(function (html) {
@@ -548,8 +548,10 @@ function clientPage(slug, watching = null) {
   }, 2000);
 })();
 </script>`
-    : watching && jobs.get(watching)?.done && !jobs.get(watching).error
-      ? `<div class="notice ok"><button class="x" onclick="this.parentNode.remove()" title="Dismiss" aria-label="Dismiss">&times;</button><b>Finished</b><div class="detail">${esc(jobs.get(watching).log.slice(-1)[0] || '')}</div></div>`
+    : watching && jobs.get(watching)?.done
+      ? (jobs.get(watching).error
+        ? `<div class="notice error"><button class="x" onclick="this.parentNode.remove()" title="Dismiss" aria-label="Dismiss">&times;</button><b>${esc(friendlyJobError(jobs.get(watching)))}</b><div class="detail">${esc(jobs.get(watching).error)}</div><div class="small muted" style="margin-top:6px">${link(`/job/${watching}`, 'Full log')}</div></div>`
+        : `<div class="notice ok"><button class="x" onclick="this.parentNode.remove()" title="Dismiss" aria-label="Dismiss">&times;</button><b>Finished</b><div class="detail">${esc(jobs.get(watching).log.slice(-1)[0] || '')}</div></div>`)
       : '';
   const canon = getCanonical(client.id);
   const inv = inventory(client.id);
@@ -636,16 +638,23 @@ function friendlyJobError(j) {
   return 'The job failed. The technical detail is below.';
 }
 
+// Where a finished job should land. Audits go to their run so the QA queue is one
+// step away; everything else returns to the client with a finished notice.
+function jobDestination(j) {
+  if (!j.done || j.error) return null;
+  if (j.kind === 'audit' && j.result?.id) return `/run/${j.result.id}`;
+  if (j.kind === 'firstrun' && j.result?.runId) return `/run/${j.result.runId}`;
+  if (j.kind === 'report' && j.result?.kind === 'google-sheet') return j.result.location;
+  if (j.kind === 'report') return `/run/${j.runId}`;
+  return `/client/${j.slug}?watching=${j.id}`;
+}
+
 function jobPage(id) {
   const j = jobs.get(id);
   if (!j) return null;
   // Where a finished job should land. Success sends you straight there instead of
   // parking on a log you have to read and dismiss yourself.
-  const destination = j.error ? null
-    : j.kind === 'audit' && j.result?.id ? `/run/${j.result.id}`
-    : j.kind === 'report' && j.result?.kind === 'google-sheet' ? j.result.location
-    : j.kind === 'firstrun' && j.result?.runId ? `/run/${j.result.runId}`
-    : `/client/${j.slug}`;
+  const destination = jobDestination(j);
   const manual = j.done && !j.error && destination
     ? `<p><a class="btn" href="${esc(destination)}">Continue</a> <span class="muted small">Taking you there now.</span></p>` : '';
   const errBox = j.error
@@ -654,15 +663,12 @@ function jobPage(id) {
     : '';
   const running = !j.done;
   return layout(`${j.kind} job`, `${errBox}<h1>${esc(j.kind === 'canonical' ? 'Reading the source of truth' : j.kind === 'discover' ? 'Finding profiles' : j.kind === 'audit' ? 'Auditing profiles' : j.kind === 'firstrun' ? 'Setting up' : 'Building the report')} for ${link(`/client/${j.slug}`, j.slug)} ${j.done ? (j.error ? '<span class="badge conflict">failed</span>' : '<span class="badge consistent">done</span>') : '<span class="badge working">working <span id="elapsed"></span></span>'}</h1>
-${running ? `<p class="muted small">Reading a page with Claude takes 10 to 30 seconds each. This keeps running if you leave, and you will be sent back to ${esc(j.slug)} in a moment. <a href="/client/${esc(j.slug)}?watching=${esc(id)}">Go now.</a></p>` : ''}
+${running ? `<p class="muted small">Reading a page with Claude takes 10 to 30 seconds each. This keeps running if you leave. ${link(`/client/${j.slug}?watching=${id}`, `Back to ${j.slug}`)}, which follows it too.</p>` : ''}
 <pre class="log${running ? ' live' : ''}" id="log">${esc(j.log.join('\n'))}</pre>${manual}
 <script>
 (function () {
   var done = ${j.done}, dest = ${destination ? JSON.stringify(destination) : 'null'};
   if (done) { if (dest) setTimeout(function () { location.href = dest; }, 700); return; }
-  // Nobody should have to watch a log. After a few seconds, hand the page back and
-  // let the work carry on; the client page shows it is still running.
-  setTimeout(function () { location.href = '/client/${j.slug}?watching=${id}'; }, 10000);
   var log = document.getElementById('log'), el = document.getElementById('elapsed');
   var started = ${JSON.stringify(j.started)};
   var t0 = Date.parse(started) || Date.now();
@@ -765,7 +771,7 @@ async function handle(req, res, body) {
     }
     if ((mm = p.match(/^\/run\/([\w-]+)$/))) { const pg = runPage(mm[1], url.searchParams.get('filter') || 'qa'); return pg ? html(pg) : html(notFoundPage('That audit run no longer exists.'), 404); }
     if ((mm = p.match(/^\/citation\/([\w-]+)$/))) { const pg = citationPage(mm[1], url.searchParams.get('run')); return pg ? html(pg) : html(notFoundPage('That profile is no longer in the inventory.'), 404); }
-    if ((mm = p.match(/^\/job\/([\w-]+)\/log$/))) { const j = jobs.get(mm[1]); return j ? json({ log: j.log, done: j.done, error: j.error }) : json({ log: ['unknown job'], done: true }); }
+    if ((mm = p.match(/^\/job\/([\w-]+)\/log$/))) { const j = jobs.get(mm[1]); return j ? json({ log: j.log, done: j.done, error: j.error, next: jobDestination(j) }) : json({ log: ['unknown job'], done: true, next: null }); }
     if ((mm = p.match(/^\/job\/([\w-]+)$/))) { const pg = jobPage(mm[1]); return pg ? html(pg) : html(notFoundPage('That job is no longer in memory, which usually means the server restarted.'), 404); }
     if (p === '/db/download') { getDb().exec('PRAGMA wal_checkpoint(TRUNCATE)'); res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Disposition': 'attachment; filename="citation-audit.sqlite"' }); return res.end(readFileSync(config.dbPath)); }
     // Booleans only, never values: this endpoint is public so the health check can reach it.
@@ -835,7 +841,7 @@ async function handle(req, res, body) {
       if (f.autorun === '1' && f.website?.trim()) {
         if (!config.anthropicKey) return bounce(`/client/${slug}`, 'error', `Added ${f.name.trim()}, but the audit cannot run`, 'ANTHROPIC_API_KEY is not set, so nothing can be read. Add it in your host\u2019s environment settings and run the setup check.');
         const j = startJob('firstrun', slug, log => firstRun(slug, log));
-        return redirect(`/job/${j.id}`);
+        return redirect(`/client/${slug}?watching=${j.id}`);
       }
       return bounce(`/client/${slug}`, 'ok', `Added ${f.name.trim()}`, f.website?.trim()
         ? 'Click "Refresh canonical facts" to read the website, then run the audit.'
@@ -854,7 +860,7 @@ async function handle(req, res, body) {
       schedulePersist();
       if (gbp && changed && config.placesKey) {
         const j = startJob('canonical', client.slug, log => refreshCanonical(getClient(client.slug), { log, lookup: gbp }));
-        return redirect(`/job/${j.id}`);
+        return redirect(`/client/${client.slug}?watching=${j.id}`);
       }
       return bounce(`/client/${client.slug}`, 'ok', 'Saved', gbp && !config.placesKey
         ? 'The Google link is stored. Reading facts from it needs a Places API key; until then use "Refresh canonical facts" to read the website.'
@@ -885,14 +891,14 @@ async function handle(req, res, body) {
       if (!client.place_id && !client.website && !client.gbp_url) return bounce(`/client/${client.slug}`, 'error', 'Add the website first', 'Put the client\u2019s website in the box below and press Save. The refresh reads that site to fill in every field.');
       if (!config.anthropicKey && client.website) return bounce(`/client/${client.slug}`, 'error', 'Claude API key is not set', 'Reading the website needs ANTHROPIC_API_KEY. Add it in your host\u2019s environment settings, then run the setup check.');
       const j = startJob('canonical', client.slug, log => refreshCanonical(client, { log, lookup: config.placesKey ? client.gbp_url : null }));
-      return redirect(`/job/${j.id}`);
+      return redirect(`/client/${client.slug}?watching=${j.id}`);
     }
     if ((mm = p.match(/^\/client\/([\w-]+)\/discover$/))) {
       const client = getClient(mm[1]);
       if (busy(client.slug)) return bounce(`/client/${client.slug}`, 'warn', 'Something is already running for this client', 'Wait for it to finish, then try again.');
       if (!getCanonical(client.id).name) return bounce(`/client/${client.slug}`, 'error', 'Set the business name first', 'Discovery searches for the canonical business name. Set it in the table below, then try again.');
       const j = startJob('discover', client.slug, async log => { const canon = getCanonical(client.id); if (!canon.name) log('No canonical name yet — using client name only. Refresh canonical facts first for better queries.'); const r = await discover(client, canon, { log }); log(`Discovery done: ${r.queries} queries, ${r.seen} results, ${r.added} new profiles`); return r; });
-      return redirect(`/job/${j.id}`);
+      return redirect(`/client/${client.slug}?watching=${j.id}`);
     }
     if ((mm = p.match(/^\/client\/([\w-]+)\/audit$/))) {
       const client = getClient(mm[1]);
@@ -908,7 +914,7 @@ async function handle(req, res, body) {
       const u = usageToday();
       if (u.calls >= u.calls_limit || u.cost >= u.cost_limit) return bounce(`/client/${client.slug}`, 'error', 'Daily Claude limit already reached', `Used ${u.calls} of ${u.calls_limit} calls and $${u.cost.toFixed(3)} of $${u.cost_limit.toFixed(2)}. Raise DAILY_CLAUDE_CALLS or DAILY_COST_LIMIT_USD in your host\u2019s environment settings, or wait for the reset at midnight UTC.`);
       const j = startJob('audit', client.slug, log => runAudit(client, { log, rediscover: f.rediscover === '1', limit }));
-      return redirect(`/job/${j.id}`);
+      return redirect(`/client/${client.slug}?watching=${j.id}`);
     }
     if ((mm = p.match(/^\/client\/([\w-]+)\/citation\/add$/))) {
       const client = getClient(mm[1]);
@@ -955,6 +961,7 @@ async function handle(req, res, body) {
         await persistNow();
         return r;
       });
+      j.runId = run.id;
       return redirect(`/job/${j.id}`);
     }
   }
