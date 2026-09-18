@@ -11,6 +11,7 @@ import { writeReport, runById, reportFiles, reportFile } from './report/sheets.j
 import { parseAddress, normHours, normServices, normPhone } from './compare/normalize.js';
 import { restore, schedulePersist, persistNow, enabled as persistEnabled } from './persist.js';
 import { usageToday, resetUsageToday, nextResetAt } from './extract/claude.js';
+import { proxyUsage, refreshProxyUsage, enabled as proxyEnabled } from './proxyUsage.js';
 import { diagnose } from './diagnose.js';
 
 const PORT = process.env.PORT || config.qaPort;
@@ -25,6 +26,9 @@ function effectiveChain() {
   const viaScraper = config.fetchProxy.provider === 'scraperapi' && Boolean(config.fetchProxy.key);
   return (viaScraper && !chain.includes('scraperapi-google') ? ['scraperapi-google', ...chain] : chain).join(',');
 }
+// The bar shows only what runs first; the full chain is on the setup page.
+const PROVIDER_NAMES = { 'scraperapi-google': 'Google via ScraperAPI', 'google-cse': 'Google Custom Search', ddg: 'DuckDuckGo', serpapi: 'SerpAPI' };
+function primaryProvider() { const first = effectiveChain().split(',')[0]; return PROVIDER_NAMES[first] || first; }
 const STARTED = new Date().toISOString();
 
 // ---------- jobs (in-process, polled by the browser) ----------
@@ -92,7 +96,7 @@ function startJob(kind, slug, fn) {
   const job = { id: uuid(), kind, slug, log: [], done: false, error: null, result: null, started: now() };
   jobs.set(job.id, job);
   const log = m => { job.log.push(m); console.log(`[${slug}] ${m}`); };
-  fn(log).then(r => { job.result = r; }).catch(e => { job.error = e.message; log(`ERROR: ${e.message}`); console.error(e); }).finally(() => { job.done = true; schedulePersist(); });
+  fn(log).then(r => { job.result = r; }).catch(e => { job.error = e.message; log(`ERROR: ${e.message}`); console.error(e); }).finally(() => { job.done = true; schedulePersist(); refreshProxyUsage(true); });
   return job;
 }
 const busy = slug => [...jobs.values()].some(j => j.slug === slug && !j.done);
@@ -122,7 +126,7 @@ body{margin:0; min-height:100vh; color:var(--ink); background:var(--paper); font
 
 /* ---- top bar: brand, then a row of readouts separated by hairlines ---- */
 header{display:flex; align-items:stretch; background:var(--sheet); border-bottom:1px solid var(--rule); position:sticky; top:0; z-index:20}
-header > *{display:flex; align-items:center; padding:0 16px; white-space:nowrap}
+header > *{display:flex; align-items:center; padding:0 14px; white-space:nowrap}
 header > * + *{border-left:1px solid var(--rule-soft)}
 header a{color:var(--ink-2); text-decoration:none}
 header a:hover{color:var(--accent)}
@@ -149,12 +153,24 @@ a:hover{color:var(--accent-ink)}
 code{font-family:var(--mono); font-size:12.5px; color:var(--ink-2); background:var(--band); padding:1px 5px; border-radius:3px}
 .mono{font-family:var(--mono); font-size:12.5px}
 
+/* ---- where you are ---- */
+.crumb{font-size:12px; color:var(--muted); margin:0 0 6px}
+.crumb a{color:var(--muted); text-decoration:none}
+.crumb a:hover{color:var(--accent); text-decoration:underline}
+
+/* ---- labelled fields in a row ---- */
+form.fields{display:grid; grid-template-columns:minmax(220px,1fr) minmax(260px,1.3fr) auto; gap:14px; align-items:end; margin-top:16px; padding-top:16px; border-top:1px solid var(--rule-soft)}
+form.fields .offfield{display:flex; width:100%}
+form.fields .offfield input{width:100%}
+form.fields .fields-save{display:flex; align-items:center; gap:12px; padding-bottom:1px}
+@media (max-width:820px){form.fields{grid-template-columns:1fr}}
+
 /* ---- sheets: a white page on the paper, one rule, no shadow ---- */
 .card{background:var(--sheet); border:1px solid var(--rule); border-radius:var(--r); padding:18px 20px; margin-bottom:16px}
 
 /* ---- tables carry the data ---- */
 table{width:100%; border-collapse:collapse; font-size:13.5px}
-th,td{text-align:left; padding:9px 10px; border-bottom:1px solid var(--rule-soft); vertical-align:top}
+th,td{text-align:left; padding:10px 12px; border-bottom:1px solid var(--rule-soft); vertical-align:top}
 th{background:var(--band); color:var(--ink-2); font-weight:600; font-size:12px; white-space:nowrap; border-bottom:1px solid var(--rule); position:sticky; top:45px; z-index:2}
 tbody tr:hover td{background:#fafbfc}
 tbody tr:last-child td{border-bottom:0}
@@ -259,10 +275,12 @@ table.canon .edit input[type=text]{width:100%; min-width:220px}
 table.canon tr.editing td:nth-child(2){width:52%}
 td.nowrap,.nowrap{white-space:nowrap}
 
-@media (max-width:820px){
+@media (max-width:1180px){
   header{flex-wrap:wrap}
   header > *{padding:9px 13px}
   header .grow{display:none}
+}
+@media (max-width:820px){
   main{padding:18px 15px 56px}
   th{position:static}
   td.wrap,.wrap{max-width:none}
@@ -286,9 +304,11 @@ const setNotice = f => { pendingNotice = f || null; };
 
 function layout(title, body, { refresh } = {}) {
   const u = usageToday();
+  refreshProxyUsage();
+  const pu = proxyUsage();
   const notice = pendingNotice; pendingNotice = null;
   return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)} — Citation Audit</title><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'> <circle cx='16' cy='16' r='16' fill='%2374d4ff'/> <path d='M9 16.4l4.8 4.9L23 11.4' fill='none' stroke='%230d3b55' stroke-width='3.6' stroke-linecap='round' stroke-linejoin='round'/> </svg>"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">${refresh ? `<meta http-equiv="refresh" content="${refresh}">` : ''}<style>${CSS}</style></head>
-<body><header><a class="brand" href="/">Citation Audit</a><a href="/setup" class="small">Setup check</a><span class="grow"></span><a class="read" href="/setup" title="Daily caps reset at midnight UTC. Click for the full setup check.">calls <b>${u.calls}/${u.calls_limit}</b></a><a class="read" href="/setup" title="Daily caps reset at midnight UTC. Click for the full setup check.">spend <b>$${u.cost.toFixed(3)}</b> of $${u.cost_limit.toFixed(2)}</a><a class="read" href="/setup" title="Click for the full setup check">model <b>${esc(config.model)}</b></a><a class="read" href="/setup" title="Click for the full setup check">search <b>${esc(effectiveChain())}</b></a><a class="read" href="/setup" title="Click for the full setup check">reports <b>${config.serviceAccountJson ? 'Google Sheets' : 'CSV download'}</b></a><a class="read" href="/setup" title="Click for the full setup check">saved <b>${persistEnabled ? 'to GitHub' : 'until restart'}</b></a></header><main>${noticeHtml(notice)}${body}</main></body></html>`;
+<body><header><a class="brand" href="/">Citation Audit</a><a href="/setup" class="small">Setup check</a><span class="grow"></span><a class="read" href="/setup" title="Daily caps reset at midnight UTC. Click for the full setup check.">calls <b>${u.calls}/${u.calls_limit}</b></a><a class="read" href="/setup" title="Daily caps reset at midnight UTC. Click for the full setup check.">spend <b>$${u.cost.toFixed(3)}</b> of $${u.cost_limit.toFixed(2)}</a><a class="read" href="/setup" title="Click for the full setup check">search <b>${esc(primaryProvider())}</b></a>${proxyEnabled() ? `<a class="read" href="/setup" title="ScraperAPI credits left this month. Click for details.">credits <b>${pu ? pu.left.toLocaleString() : '…'}</b>${pu ? ` of ${pu.limit.toLocaleString()}` : ''}</a>` : ''}<a class="read" href="/setup" title="Click for the full setup check">reports <b>${config.serviceAccountJson ? 'Google Sheets' : 'CSV'}</b></a><a class="read" href="/setup" title="Click for the full setup check">saved <b>${persistEnabled ? 'to GitHub' : 'until restart'}</b></a></header><main>${noticeHtml(notice)}${body}</main></body></html>`;
 }
 
 // ---------- pages ----------
@@ -318,7 +338,13 @@ function homePage(sort = 'name') {
       : '<span class="muted">never</span>',
     `<a class="btn secondary small" href="/client/${c.slug}/delete">Delete</a>`,
   ]);
-  return layout('Clients', `${firstRun ? '<div class="card"><b>First time here?</b> Run the <a href="/setup">setup check</a> to confirm your keys work, then add a client below.</div>' : ''}<h1>Clients</h1><div class="card">
+  const totals = {
+    profiles: clients.reduce((n, c) => n + c.inv, 0),
+    conflicts: clients.reduce((n, c) => n + (c.run?.conflicts || 0), 0),
+    audits: get('SELECT COUNT(*) n FROM audit_runs WHERE finished_at IS NOT NULL').n,
+  };
+  return layout('Clients', `${firstRun ? '<div class="card"><b>First time here?</b> Run the <a href="/setup">setup check</a> to confirm your keys work, then add a client below.</div>' : ''}<h1>Clients</h1>
+${clients.length ? `<div class="card"><div class="grid readout"><div class="stat">${clients.length}<small>client${clients.length === 1 ? '' : 's'}</small></div><div class="stat">${totals.profiles}<small>profiles tracked</small></div><div class="stat" style="color:${totals.conflicts ? 'var(--bad)' : 'var(--ok)'}">${totals.conflicts}<small>profiles with conflicts, latest audits</small></div><div class="stat">${totals.audits}<small>audits run</small></div></div></div>` : ''}<div class="card">
 ${table([th('name'), 'Website', th('profiles'), th('recent'), ''], rows)}
 ${clients.length > 1 ? `<p class="muted small" style="margin:10px 0 0">Sorted by ${esc(CLIENT_SORTS[sort].label.toLowerCase())}. Click another heading to change it.</p>` : ''}</div>
 <h2>Add a client</h2><div class="card"><form method="post" action="/client/add"><div class="grid">
@@ -519,14 +545,17 @@ function clientPage(slug, watching = null) {
   const isBusy = busy(slug);
   const active = inv.filter(c => c.status === 'active').length;
   const dis = isBusy ? 'disabled' : '';
-  return layout(client.name, `${liveBanner}${verdict}<h1>${esc(client.name)} <span class="muted small">${esc(slug)}</span></h1>
+  return layout(client.name, `${liveBanner}${verdict}<p class="crumb"><a href="/">Clients</a> / ${esc(client.name)}</p><h1>${esc(client.name)} <span class="muted small">${esc(slug)}</span></h1>
 <div class="card"><div class="actions">
 <form method="post" action="/client/${slug}/canonical/refresh" class="inline"><button ${dis} class="secondary">Refresh canonical facts</button></form>
 <form method="post" action="/client/${slug}/discover" class="inline"><button ${dis} class="secondary">Discover profiles</button></form>
 <form method="post" action="/client/${slug}/audit" class="inline"><button ${dis}>Run audit${active ? ` (${active} stored profiles)` : ' (will discover first)'}</button> <label class="inline small" style="display:inline"><input type="checkbox" name="rediscover" value="1"> also re-discover</label> <input type="number" name="limit" placeholder="limit" style="width:70px"></form>
 </div>
-<p class="muted small">Website ${client.website ? ext(client.website) : 'not set'}<br>Google Business Profile ${client.gbp_url ? ext(client.gbp_url, 'open') : 'not set'}${client.place_id ? ' (linked to Google)' : ''}<br>Sheet ${client.sheet_id ? ext(`https://docs.google.com/spreadsheets/d/${client.sheet_id}`, 'open') : 'not created yet'}</p>
-<form method="post" action="/client/${slug}/set" class="actions"><input type="url" name="website" placeholder="Website address" value="${esc(client.website || '')}" style="width:250px"><span class="offfield"><input type="text" name="gbp_url" placeholder="Google Business Profile link" value="${esc(client.gbp_url || '')}" style="width:330px">${GBP_READS ? '' : `<span class="info" tabindex="0" role="note" aria-label="About this field" title="Saved and kept here for reference. Pulling the name, address, phone and hours out of the profile needs a Google Places API key, which requires Google Cloud billing. Until then, Refresh canonical facts reads the client website instead.">i</span>`}</span><button class="secondary">Save</button></form></div>
+<form method="post" action="/client/${slug}/set" class="fields">
+<div><label>Website${client.website ? ` <span class="muted">(${ext(client.website, 'open')})</span>` : ''}</label><input type="url" name="website" placeholder="https://example.com" value="${esc(client.website || '')}"></div>
+<div><label>Google Business Profile${client.gbp_url ? ` <span class="muted">(${ext(client.gbp_url, 'open')})</span>` : ''}${client.place_id ? ' <span class="muted">linked</span>' : ''}</label><span class="offfield"><input type="text" name="gbp_url" placeholder="Paste the Google Maps link" value="${esc(client.gbp_url || '')}">${GBP_READS ? '' : `<span class="info" tabindex="0" role="note" aria-label="About this field" title="Saved and kept here for reference. Pulling the name, address, phone and hours out of the profile needs a Google Places API key, which requires Google Cloud billing. Until then, Refresh canonical facts reads the client website instead.">i</span>`}</span></div>
+<div class="fields-save"><button class="secondary">Save</button>${client.sheet_id ? `<span class="small">${ext(`https://docs.google.com/spreadsheets/d/${client.sheet_id}`, 'Google Sheet')}</span>` : ''}</div>
+</form></div>
 
 ${canonicalHtml(client, canon)}${CANON_JS}
 
@@ -550,7 +579,7 @@ function runPage(id, filter = 'qa') {
   const skippedNote = skipped.length
     ? `<div class="notice warn"><button class="x" onclick="this.parentNode.remove()" title="Dismiss" aria-label="Dismiss">&times;</button><b>${skipped.length} field${skipped.length > 1 ? 's were' : ' was'} not checked on any profile</b><div class="detail">${esc(skipped.join(', '))} ${skipped.length > 1 ? 'have' : 'has'} no canonical value set, so there was nothing to compare against. Set ${skipped.length > 1 ? 'them' : 'it'} on ${client.name}'s page and run the audit again.</div></div>` : '';
   const qaForm = r => `<div class="qa"><form method="post" action="/finding/${r.id}/qa"><select name="decision"><option value="confirm">Confirm as-is</option><option value="dismiss">Dismiss (not a real issue)</option><option value="correct">Correct status to</option></select><select name="corrected_status"><option value="conflict">conflict</option><option value="consistent">consistent</option><option value="unable_to_verify">unable to verify</option></select><input type="text" name="note" placeholder="note" style="width:140px"><button>Save</button></form>${r.decision ? `<div class="small muted">QA: ${esc(r.decision)}${r.corrected_status ? ` → ${esc(r.corrected_status)}` : ''}${r.qa_note ? ` — ${esc(r.qa_note)}` : ''}</div>` : ''}</div>`;
-  return layout(`Run ${id.slice(0, 8)}`, `${skippedNote}<h1>${link(`/client/${client.slug}`, client.name)}<span class="muted" style="font-weight:400"> audit ${esc(run.started_at.replace('T', ' ').slice(0, 16))}</span> <span class="badge">${esc(run.mode)}</span></h1>
+  return layout(`Run ${id.slice(0, 8)}`, `${skippedNote}<p class="crumb"><a href="/">Clients</a> / ${link(`/client/${client.slug}`, client.name)} / Audit ${esc(run.started_at.slice(0, 10))}</p><h1>Audit of ${esc(run.started_at.replace('T', ' ').slice(0, 16))} <span class="badge">${esc(run.mode)}</span></h1>
 <div class="card"><div class="grid readout"><div class="stat">${run.citations_total}<small>profiles audited</small></div><div class="stat" style="color:var(--ok)">${run.consistent}<small>consistent</small></div><div class="stat" style="color:var(--bad)">${run.conflicts}<small>with conflicts</small></div><div class="stat" style="color:var(--warn)">${run.unverified}<small>unable to verify</small></div><div class="stat">${open}<small>findings awaiting QA</small></div></div>
 <p class="actions">${run.sheet_url && run.sheet_url.startsWith('http') ? ext(run.sheet_url, 'Open Google Sheet') : ''} <form method="post" action="/run/${id}/report" class="inline"><button ${busy(client.slug) ? 'disabled' : ''}>${files.length ? 'Regenerate report' : 'Generate report'}</button></form> <span class="muted small">Client Action tab = ${conflicts} confirmed conflict(s). Findings still in QA are held back from the client tab.</span></p></div>
 ${files.length ? `<h2>Report files</h2><div class="card">${table(['File', 'What it holds', 'Size', ''], files.map(f => [
@@ -651,11 +680,13 @@ function setupPage(result) {
   const icon = { ok: '<span class="badge consistent">OK</span>', warn: '<span class="badge unable_to_verify">Optional</span>', fail: '<span class="badge conflict">Blocking</span>' };
   const rows = (result?.checks || []).map(c => [icon[c.status], `<b>${esc(c.name)}</b>`, `<span class="wrap">${esc(c.detail)}</span>${c.fix ? `<div class="small muted">${esc(c.fix)}</div>` : ''}`]);
   const u = usageToday();
+  const pu = proxyUsage();
   const nextAt = nextResetAt();
   return layout('Setup check', `<h1>Setup check</h1>
 <div class="card"><p class="muted small">Confirms each key actually works, including one real (about $0.001) Claude call. Run it after changing anything in Render → Environment.</p>
 <p class="actions"><form method="post" action="/setup/run" class="inline"><button>Run the check</button></form> <a class="btn secondary" href="/">Back to clients</a></p></div>
-<h2>Today's usage</h2><div class="card"><p>${u.calls} of ${u.calls_limit} Claude calls and $${u.cost.toFixed(3)} of $${u.cost_limit.toFixed(2)} used${u.reset_at ? ` since the counter was reset at ${esc(u.reset_at.replace('T', ' ').slice(0, 16))} UTC` : ' since midnight UTC'}.</p>
+<h2>Today's usage</h2><div class="card"><p>${u.calls} of ${u.calls_limit} Claude calls (${esc(config.model)}) and $${u.cost.toFixed(3)} of $${u.cost_limit.toFixed(2)} used${u.reset_at ? ` since the counter was reset at ${esc(u.reset_at.replace('T', ' ').slice(0, 16))} UTC` : ' since midnight UTC'}.</p>
+${proxyEnabled() ? (pu ? `<p>ScraperAPI: <b>${pu.left.toLocaleString()}</b> of ${pu.limit.toLocaleString()} credits left this month, renewing ${esc(pu.renews)}. Yelp costs about 10 credits a page, most directories 1, and Google searches have registered 0. <span class="muted small">Checked ${esc(pu.at.replace('T', ' ').slice(0, 16))} UTC.</span></p>` : '<p class="muted">ScraperAPI credits: not fetched yet. Run the check to load them.</p>') : ''}
 <p class="muted small">This is the app's own tally for the daily cap. Resetting it lets audits continue today; it does not change what Anthropic bills, and the history is kept.</p>
 <p class="actions"><form method="post" action="/setup/reset-usage" class="inline"><button class="secondary" ${nextAt ? 'disabled' : ''}>Reset today's counter</button></form>${nextAt ? `<span class="muted small">Once every 24 hours. Available again ${esc(fmtWhen(nextAt))}.</span>` : '<span class="muted small">Once every 24 hours.</span>'}</p></div>
 ${result ? `<div class="card">${table(['', 'Check', 'Result'], rows)}
@@ -965,6 +996,7 @@ function authorized(req) {
 
 await restore().catch(e => console.error('[persist] restore failed:', e.message));
 getDb();
+refreshProxyUsage();
 createServer((req, res) => {
   // /health must stay open: platform health checks send no credentials, and a 401 there fails the deploy.
   const isHealth = (req.url || '').split('?')[0] === '/health';

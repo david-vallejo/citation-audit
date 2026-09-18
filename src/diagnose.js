@@ -2,6 +2,7 @@ import { config } from './config.js';
 import { extractListing, usageToday } from './extract/claude.js';
 import { searchPlaces } from './canonical/places.js';
 import { fetchPage } from './fetch/page.js';
+import { refreshProxyUsage } from './proxyUsage.js';
 
 const ok = (name, detail) => ({ name, status: 'ok', detail });
 const warn = (name, detail, fix) => ({ name, status: 'warn', detail, fix });
@@ -98,8 +99,10 @@ export async function diagnose({ callClaude = true } = {}) {
       const t = Date.now();
       const p = await fetchPage(probe);
       const secs = ((Date.now() - t) / 1000).toFixed(1);
+      const pu = await refreshProxyUsage(true);
+      const credits = pu ? ` ${pu.left.toLocaleString()} of ${pu.limit.toLocaleString()} credits left, renewing ${pu.renews}.` : '';
       if (p.method.startsWith('proxy') && p.text.length > 1500) {
-        out.push(ok('Scraping proxy', `${config.fetchProxy.provider} read a live Yelp page in ${secs}s (${p.text.length.toLocaleString()} chars). Blocked directories are now readable.`));
+        out.push(ok('Scraping proxy', `${config.fetchProxy.provider} read a live Yelp page in ${secs}s (${p.text.length.toLocaleString()} chars).${credits}`));
       } else if (p.method.startsWith('proxy')) {
         out.push(warn('Scraping proxy', `${config.fetchProxy.provider} responded but returned little content (${p.text.length} chars)`, 'The key works; that page may be an interstitial. Try an audit and check the evidence page.'));
       } else {
