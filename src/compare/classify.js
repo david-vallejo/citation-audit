@@ -78,7 +78,7 @@ export function compareHours(canon, cited) {
 
 function compareYear(canon, cited) {
   const c = N.normYear(canon), x = N.normYear(cited);
-  if (!x) return missing('year_founded', c ?? '');
+  if (!x) return missing('year_founded', c == null ? '' : String(c));
   if (!c) return finding('year_founded', UNVERIFIED, 1, '', String(x), 'No canonical founding year on file');
   if (c === x) return finding('year_founded', CONSISTENT, 0.98, String(c), String(x), 'Match');
   return finding('year_founded', CONFLICT, Math.abs(c - x) <= 1 ? 0.7 : 0.9, String(c), String(x), 'Different founding year');

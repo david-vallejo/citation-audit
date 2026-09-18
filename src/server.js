@@ -107,229 +107,148 @@ const fieldLabel = f => ({ name: 'Business Name', address: 'Address', phone: 'Ph
 
 const CSS = `
 :root{
-  --bg-core:#1b212a; --bg-mid:#151b23; --bg-edge:#0a0d11;
-  --panel:#121821; --panel-hi:#18212c; --panel-sunk:#0e141b;
-  --line:#22303c; --line-soft:#1a242e; --line-lit:#3f88b0;
-  --blue:#74d4ff; --blue-deep:#2e7fa8; --blue-glow:rgba(116,212,255,.16);
-  --ink:#ffffff; --muted:#b7c1cc; --faint:#79838f;
-  --ok:#5ce6a6; --warn:#f5c451; --bad:#ff7a8a;
-  --sans:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
-  --r:3px;
+  --paper:#f4f6f8; --sheet:#ffffff; --band:#f0f3f6;
+  --ink:#1a2330; --ink-2:#3d4a5c; --muted:#6b7787; --faint:#9aa5b3;
+  --rule:#d5dbe3; --rule-soft:#e6eaef;
+  --accent:#1f5fbf; --accent-ink:#17488f; --accent-wash:#e8f0fb;
+  --ok:#1e7f4f; --ok-wash:#e6f4ec; --bad:#b3261e; --bad-wash:#fbe9e7; --warn:#9a6700; --warn-wash:#fbf3d9;
+  --sans:"Public Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --r:4px;
 }
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
-body{
-  margin:0; min-height:100vh; color:var(--ink);
-  font:400 14px/1.5 var(--sans); letter-spacing:.005em;
-  background:var(--bg-edge);
-  background-image:radial-gradient(1250px 820px at 50% -12%, #232c38 0%, var(--bg-core) 26%, var(--bg-mid) 55%, var(--bg-edge) 100%);
-  background-attachment:fixed;
-}
+body{margin:0; min-height:100vh; color:var(--ink); background:var(--paper); font:400 14px/1.5 var(--sans); font-variant-numeric:tabular-nums}
 
-/* ---- status strip ---- */
-header{
-  display:flex; align-items:stretch; gap:0;
-  background:linear-gradient(180deg,rgba(18,24,33,.92),rgba(10,13,17,.92));
-  border-bottom:1px solid var(--line);
-  box-shadow:0 1px 0 var(--blue-glow), 0 12px 32px -24px #000;
-  backdrop-filter:blur(8px); position:sticky; top:0; z-index:20;
-}
+/* ---- top bar: brand, then a row of readouts separated by hairlines ---- */
+header{display:flex; align-items:stretch; background:var(--sheet); border-bottom:1px solid var(--rule); position:sticky; top:0; z-index:20}
 header > *{display:flex; align-items:center; padding:0 16px; white-space:nowrap}
-header > * + *{border-left:1px solid var(--line-soft)}
-header a{color:var(--muted); text-decoration:none}
-header a:hover{color:var(--blue)}
-header .brand{
-  color:var(--blue); font-weight:600; letter-spacing:-.01em; font-size:15px;
-  padding-left:22px; padding-right:18px;
-}
-header .brand:hover{color:var(--ink)}
-header .grow{flex:1; border-left:1px solid var(--line-soft); padding:0}
+header > * + *{border-left:1px solid var(--rule-soft)}
+header a{color:var(--ink-2); text-decoration:none}
+header a:hover{color:var(--accent)}
+header .brand{color:var(--ink); font-weight:700; letter-spacing:-.01em; font-size:15px; padding-left:22px; padding-right:18px}
+header .grow{flex:1; border-left:0; padding:0}
+header .read{font-size:12px; color:var(--muted); gap:5px; padding-top:12px; padding-bottom:12px}
+header .read b{color:var(--ink); font-weight:600}
 header a.read{text-decoration:none}
-header a.read:hover b{color:var(--blue)}
-header .read{font-family:var(--mono); font-size:11.5px; color:var(--faint); gap:5px; padding-top:11px; padding-bottom:11px}
-header .read b{color:var(--muted); font-weight:500}
-main{max-width:1340px; margin:0 auto; padding:26px 22px 72px}
+header a.read:hover b{color:var(--accent)}
+main{max-width:1320px; margin:0 auto; padding:28px 24px 80px}
 
 /* ---- type ---- */
-h1{font-size:23px; font-weight:600; letter-spacing:-.015em; margin:0 0 18px; color:var(--ink)}
-h1 a{color:var(--blue); text-decoration:none}
-h1 a:hover{text-decoration:underline}
-h2{font-size:13px; font-weight:600; color:var(--blue); margin:30px 0 10px; letter-spacing:.01em}
-a{color:var(--blue)}
-a:hover{color:#a6e4ff}
-.muted{color:var(--faint)}
+h1{font-size:26px; font-weight:700; letter-spacing:-.02em; line-height:1.2; margin:0 0 18px; color:var(--ink)}
+h1 a{color:var(--ink); text-decoration:none}
+h1 a:hover{color:var(--accent)}
+h1 .muted{font-weight:400; letter-spacing:0; font-size:15px}
+/* a section label sits on its own rule, the way a ledger heading does */
+h2{font-size:13px; font-weight:600; color:var(--ink); margin:32px 0 10px; padding-bottom:6px; border-bottom:1px solid var(--rule); letter-spacing:.005em}
+h2 .muted{font-weight:400}
+a{color:var(--accent)}
+a:hover{color:var(--accent-ink)}
+.muted{color:var(--muted)}
 .small{font-size:12px}
-code{font-family:var(--mono); font-size:12.5px; color:var(--blue)}
+code{font-family:var(--mono); font-size:12.5px; color:var(--ink-2); background:var(--band); padding:1px 5px; border-radius:3px}
+.mono{font-family:var(--mono); font-size:12.5px}
 
-/* ---- panels: one lit edge, not a uniform box ---- */
-.card{
-  background:linear-gradient(180deg,var(--panel-hi),var(--panel));
-  border:1px solid var(--line); border-top-color:var(--blue-deep);
-  border-radius:var(--r); padding:16px 18px; margin-bottom:14px;
-  box-shadow:inset 0 1px 0 var(--blue-glow);
-}
+/* ---- sheets: a white page on the paper, one rule, no shadow ---- */
+.card{background:var(--sheet); border:1px solid var(--rule); border-radius:var(--r); padding:18px 20px; margin-bottom:16px}
 
 /* ---- tables carry the data ---- */
-table{width:100%; border-collapse:collapse; font-size:13px}
-th,td{text-align:left; padding:9px 10px; border-bottom:1px solid var(--line-soft); vertical-align:top}
-th{
-  background:var(--panel-sunk); color:var(--blue); font-weight:600; font-size:12px;
-  white-space:nowrap; border-bottom:1px solid var(--line); position:sticky; top:41px; z-index:2;
-}
-tbody tr:hover td{background:rgba(116,212,255,.035)}
+table{width:100%; border-collapse:collapse; font-size:13.5px}
+th,td{text-align:left; padding:9px 10px; border-bottom:1px solid var(--rule-soft); vertical-align:top}
+th{background:var(--band); color:var(--ink-2); font-weight:600; font-size:12px; white-space:nowrap; border-bottom:1px solid var(--rule); position:sticky; top:45px; z-index:2}
+tbody tr:hover td{background:#fafbfc}
 tbody tr:last-child td{border-bottom:0}
-td{color:var(--muted)}
-td b,td strong{color:var(--ink); font-weight:600}
+td{color:var(--ink)}
+td b,td strong{font-weight:600}
 td.wrap,.wrap{max-width:380px; word-break:break-word}
-/* values read as instrument output */
-td a[href^="http"],.mono{font-family:var(--mono); font-size:12.5px}
+td a[href^="http"]{color:var(--accent); text-decoration:none}
+td a[href^="http"]:hover{text-decoration:underline}
+th a{color:var(--ink-2); text-decoration:none}
+th a:hover{color:var(--accent)}
+th a.sorted{color:var(--ink)}
+th a.sorted::after{content:" \\2193"; color:var(--accent)}
 
-/* ---- signal indicators ---- */
-.badge{
-  display:inline-flex; align-items:center; gap:6px; padding:2px 9px 2px 7px;
-  border-radius:999px; font-size:11.5px; font-weight:500; line-height:1.7;
-  border:1px solid var(--line); color:var(--muted); background:var(--panel-sunk);
-}
-.badge::before{content:""; width:5px; height:5px; border-radius:50%; background:currentColor; flex:none}
-.badge.conflict{color:var(--bad); border-color:rgba(255,122,138,.4); background:rgba(255,122,138,.09)}
-.badge.consistent{color:var(--ok); border-color:rgba(92,230,166,.35); background:rgba(92,230,166,.08)}
-.badge.unable_to_verify{color:var(--warn); border-color:rgba(245,196,81,.35); background:rgba(245,196,81,.08)}
-.badge.dismissed{color:var(--faint)}
-/* A long model call looks frozen without this. Motion here reports live state. */
-.badge.working{color:var(--blue); border-color:var(--blue-deep); background:rgba(116,212,255,.08)}
-.badge.working::before{
-  width:9px; height:9px; background:none; border:1.5px solid rgba(116,212,255,.28);
-  border-top-color:var(--blue); animation:spin .7s linear infinite;
-}
+/* ---- state indicators ---- */
+.badge{display:inline-flex; align-items:center; gap:6px; padding:1px 9px 1px 7px; border-radius:999px; font-size:12px; font-weight:500; line-height:1.7; border:1px solid var(--rule); color:var(--ink-2); background:var(--sheet)}
+.badge::before{content:""; width:6px; height:6px; border-radius:50%; background:currentColor; flex:none}
+.badge.conflict{color:var(--bad); border-color:#efb8b3; background:var(--bad-wash)}
+.badge.consistent{color:var(--ok); border-color:#b6dcc6; background:var(--ok-wash)}
+.badge.unable_to_verify{color:var(--warn); border-color:#e6d59a; background:var(--warn-wash)}
+.badge.dismissed{color:var(--muted)}
+.badge.working{color:var(--accent); border-color:#b9cdf0; background:var(--accent-wash)}
+.badge.working::before{width:9px; height:9px; background:none; border:1.5px solid #b9cdf0; border-top-color:var(--accent); animation:spin .7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
-pre.log.live::after{
-  content:"\\2588"; color:var(--blue); animation:blink 1.1s steps(1) infinite; margin-left:1px;
-}
-@keyframes blink{50%{opacity:0}}
-/* Reduced motion keeps the elapsed counter, which carries the same information. */
-@media (prefers-reduced-motion:reduce){
-  .badge.working::before{animation:none; border-top-color:var(--blue); border-color:var(--blue)}
-  pre.log.live::after{animation:none}
-}
 
 /* ---- controls ---- */
-button,.btn{
-  font:500 13px var(--sans); cursor:pointer; border-radius:var(--r);
-  padding:7px 14px; text-decoration:none; display:inline-block;
-  color:#04121b; background:linear-gradient(180deg,#8adcff,var(--blue));
-  border:1px solid #96e0ff; box-shadow:0 0 0 1px rgba(116,212,255,.12), 0 6px 18px -12px var(--blue);
-}
-button:hover,.btn:hover{background:linear-gradient(180deg,#a6e6ff,#84daff); color:#04121b}
-button.secondary,.btn.secondary{
-  background:var(--panel-hi); color:var(--muted); border:1px solid var(--line); box-shadow:none;
-}
-button.secondary:hover,.btn.secondary:hover{color:var(--blue); border-color:var(--blue-deep); background:var(--panel-hi)}
-button.danger{background:linear-gradient(180deg,#ff97a3,#ff7a8a); border-color:#ffa3ad; color:#2a0508}
-button:disabled,.btn:disabled{opacity:.4; cursor:default; box-shadow:none}
-input,select,textarea{
-  font:400 13px var(--sans); color:var(--ink); background:var(--panel-sunk);
-  border:1px solid var(--line); border-radius:var(--r); padding:7px 9px;
-}
-input::placeholder{color:#5d6773}
-input:focus,select:focus,textarea:focus,button:focus-visible,a:focus-visible{
-  outline:2px solid var(--blue); outline-offset:1px; border-color:var(--blue-deep);
-}
+button,.btn{font:500 13px var(--sans); cursor:pointer; border-radius:var(--r); padding:7px 14px; text-decoration:none; display:inline-block; color:#fff; background:var(--accent); border:1px solid var(--accent-ink)}
+button:hover,.btn:hover{background:var(--accent-ink); color:#fff}
+button.secondary,.btn.secondary{background:var(--sheet); color:var(--ink); border:1px solid var(--rule)}
+button.secondary:hover,.btn.secondary:hover{border-color:var(--ink-2); background:var(--sheet); color:var(--ink)}
+button.danger{background:var(--bad); border-color:#8e1e17}
+button.danger:hover{background:#8e1e17}
+button:disabled,.btn:disabled{opacity:.45; cursor:default}
+.btn.small,button.small{padding:4px 10px; font-size:12px}
+input,select,textarea{font:400 13.5px var(--sans); color:var(--ink); background:var(--sheet); border:1px solid var(--rule); border-radius:var(--r); padding:7px 9px}
+input::placeholder{color:var(--faint)}
+input:focus,select:focus,textarea:focus,button:focus-visible,a:focus-visible{outline:2px solid var(--accent); outline-offset:1px; border-color:var(--accent)}
 input[type=text],input[type=url],input[type=number]{width:100%}
-select{appearance:none; padding-right:26px;
-  background-image:linear-gradient(45deg,transparent 50%,var(--blue) 50%),linear-gradient(135deg,var(--blue) 50%,transparent 50%);
-  background-position:calc(100% - 14px) 14px,calc(100% - 9px) 14px; background-size:5px 5px,5px 5px; background-repeat:no-repeat;
-}
-label{display:block; font-size:11.5px; color:var(--faint); margin-bottom:4px}
+select{appearance:none; padding-right:26px; background-image:linear-gradient(45deg,transparent 50%,var(--ink-2) 50%),linear-gradient(135deg,var(--ink-2) 50%,transparent 50%); background-position:calc(100% - 14px) 14px,calc(100% - 9px) 14px; background-size:5px 5px,5px 5px; background-repeat:no-repeat}
+label{display:block; font-size:12px; color:var(--muted); margin-bottom:4px}
 form.inline{display:inline}
 .actions{display:flex; flex-wrap:wrap; gap:9px; align-items:center}
 .grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:14px}
-.grid.readout{grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:18px}
+.grid.readout{grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:0}
 
-/* ---- the readout: the one loud moment ---- */
-.stat{
-  font-family:var(--mono); font-size:38px; font-weight:400; color:var(--blue);
-  line-height:1.05; letter-spacing:-.02em; padding-bottom:10px;
-  border-bottom:1px solid var(--line); font-variant-numeric:tabular-nums;
-}
-.stat small{
-  display:block; margin-top:8px; font-family:var(--sans); font-size:11.5px;
-  font-weight:400; color:var(--faint); letter-spacing:.01em;
-}
+/* ---- the reconciliation summary: the one loud element ---- */
+.grid.readout .stat{padding:4px 18px 12px 0; margin-right:18px; border-bottom:2px solid currentColor}
+.stat{font-size:40px; font-weight:600; line-height:1.05; letter-spacing:-.02em; color:var(--ink)}
+.stat small{display:block; margin-top:8px; font-size:12px; font-weight:400; color:var(--muted); letter-spacing:0}
 
 /* ---- notices ---- */
-.notice{
-  position:relative; border:1px solid var(--line); border-left-width:2px; border-radius:var(--r);
-  padding:12px 42px 12px 15px; margin:0 0 16px; background:var(--panel);
-}
+.notice{position:relative; border:1px solid var(--rule); border-left:3px solid var(--ink-2); border-radius:var(--r); padding:12px 42px 12px 15px; margin:0 0 16px; background:var(--sheet)}
 .notice b{display:block; margin-bottom:2px; color:var(--ink); font-weight:600}
-.notice .detail{
-  font-family:var(--mono); font-size:11.5px; color:var(--muted); white-space:pre-wrap;
-  word-break:break-word; max-height:220px; overflow:auto; margin-top:6px;
-  padding-top:8px; border-top:1px solid var(--line-soft);
-}
-.notice.error{border-left-color:var(--bad); background:linear-gradient(90deg,rgba(255,122,138,.09),var(--panel) 40%)}
+.notice .detail{font-size:12.5px; color:var(--ink-2); white-space:pre-wrap; word-break:break-word; max-height:220px; overflow:auto; margin-top:6px; padding-top:8px; border-top:1px solid var(--rule-soft)}
+.notice.error{border-left-color:var(--bad); background:var(--bad-wash)}
 .notice.error b{color:var(--bad)}
-.notice.warn{border-left-color:var(--warn); background:linear-gradient(90deg,rgba(245,196,81,.08),var(--panel) 40%)}
+.notice.warn{border-left-color:var(--warn); background:var(--warn-wash)}
 .notice.warn b{color:var(--warn)}
-.notice.ok{border-left-color:var(--ok); background:linear-gradient(90deg,rgba(92,230,166,.08),var(--panel) 40%)}
+.notice.ok{border-left-color:var(--ok); background:var(--ok-wash)}
 .notice.ok b{color:var(--ok)}
-.notice .x{
-  position:absolute; top:7px; right:9px; background:none; border:0; box-shadow:none;
-  font-size:17px; line-height:1; color:var(--faint); cursor:pointer; padding:3px 7px;
-}
+.notice .x{position:absolute; top:7px; right:9px; background:none; border:0; font-size:18px; line-height:1; color:var(--muted); cursor:pointer; padding:3px 7px}
 .notice .x:hover{color:var(--ink); background:none}
 
-/* ---- logs ---- */
-pre.log{
-  background:var(--panel-sunk); color:var(--muted); border:1px solid var(--line);
-  border-radius:var(--r); padding:14px 16px; max-height:520px; overflow:auto;
-  font-family:var(--mono); font-size:12px; line-height:1.65; white-space:pre-wrap; margin:0 0 14px;
-}
+/* ---- logs: the one place monospace belongs ---- */
+pre.log{background:var(--band); color:var(--ink); border:1px solid var(--rule); border-radius:var(--r); padding:14px 16px; max-height:520px; overflow:auto; font-family:var(--mono); font-size:12.5px; line-height:1.6; white-space:pre-wrap; margin:0 0 14px}
+pre.log.live::after{content:"\\2588"; color:var(--accent); animation:blink 1.1s steps(1) infinite; margin-left:1px}
+@keyframes blink{50%{opacity:0}}
 
 /* ---- tabs ---- */
-.tabs{display:flex; gap:2px; border-bottom:1px solid var(--line); margin:22px 0 14px; padding:0}
-.tabs a{
-  padding:8px 14px; color:var(--faint); text-decoration:none; font-size:13px;
-  border:1px solid transparent; border-bottom:0; border-radius:var(--r) var(--r) 0 0; margin-bottom:-1px;
-}
-.tabs a:hover{color:var(--muted)}
-.tabs a.on{
-  color:var(--blue); font-weight:500; background:var(--panel-hi);
-  border-color:var(--line); border-top-color:var(--blue-deep);
-}
-
-th a{color:var(--blue); text-decoration:none}
-th a:hover{text-decoration:underline}
-th a.sorted{color:var(--ink)}
-th a.sorted::after{content:" \\2193"; color:var(--blue)}
-.btn.small,button.small{padding:4px 10px; font-size:12px}
-
-/* ---- a control that is off because a key is missing ---- */
-.offfield{position:relative; display:inline-flex; align-items:center}
-.offfield input{padding-right:30px}
-.info{
-  position:absolute; right:8px; width:16px; height:16px; border-radius:50%;
-  border:1px solid var(--blue-deep); color:var(--blue); background:var(--panel-sunk);
-  font:600 11px/14px var(--sans); text-align:center; cursor:help; user-select:none;
-}
-.info:hover,.info:focus{background:var(--blue); color:#04121b; outline:none}
-
-/* ---- canonical table: view state vs edit state ---- */
-table.canon td:last-child{text-align:right; white-space:nowrap; width:1%}
-table.canon .edit{display:none}
-table.canon tr.editing .view{display:none}
-table.canon tr.editing .edit{display:flex; gap:6px; align-items:center; justify-content:flex-end; flex-wrap:nowrap}
-table.canon tr.editing td{background:rgba(116,212,255,.05)}
-table.canon .edit input[type=text]{width:100%; min-width:220px; font-family:var(--mono); font-size:12.5px}
-table.canon tr.editing td:nth-child(2){width:52%}
-td.nowrap,.nowrap{white-space:nowrap}
+.tabs{display:flex; gap:22px; border-bottom:1px solid var(--rule); margin:24px 0 16px; padding:0}
+.tabs a{padding:8px 0 9px; color:var(--muted); text-decoration:none; font-size:13.5px; border-bottom:2px solid transparent; margin-bottom:-1px}
+.tabs a:hover{color:var(--ink)}
+.tabs a.on{color:var(--ink); font-weight:600; border-bottom-color:var(--accent)}
 
 /* ---- qa row controls ---- */
 .qa form{display:flex; gap:5px; flex-wrap:wrap; align-items:center}
 .qa select,.qa input{font-size:12px; padding:4px 7px}
 .qa select{padding-right:24px; background-position:calc(100% - 12px) 12px,calc(100% - 7px) 12px}
 .qa button{padding:4px 11px; font-size:12px}
+
+/* ---- a field that is switched off, with its explanation ---- */
+.offfield{position:relative; display:inline-flex; align-items:center}
+.offfield input{padding-right:30px}
+.info{position:absolute; right:8px; width:16px; height:16px; border-radius:50%; border:1px solid var(--rule); color:var(--muted); background:var(--sheet); font:600 11px/14px var(--sans); text-align:center; cursor:help; user-select:none}
+.info:hover,.info:focus{border-color:var(--accent); color:var(--accent); outline:none}
+
+/* ---- canonical table: view state vs edit state ---- */
+table.canon td:last-child{text-align:right; white-space:nowrap; width:1%}
+table.canon .edit{display:none}
+table.canon tr.editing .view{display:none}
+table.canon tr.editing .edit{display:flex; gap:6px; align-items:center; justify-content:flex-end; flex-wrap:nowrap}
+table.canon tr.editing td{background:var(--accent-wash)}
+table.canon .edit input[type=text]{width:100%; min-width:220px}
+table.canon tr.editing td:nth-child(2){width:52%}
+td.nowrap,.nowrap{white-space:nowrap}
 
 @media (max-width:820px){
   header{flex-wrap:wrap}
@@ -340,7 +259,10 @@ td.nowrap,.nowrap{white-space:nowrap}
   td.wrap,.wrap{max-width:none}
   .stat{font-size:30px}
 }
-@media (prefers-reduced-motion:reduce){*{animation:none!important; transition:none!important}}
+@media (prefers-reduced-motion:reduce){
+  *{animation:none!important; transition:none!important}
+  .badge.working::before{border-top-color:var(--accent); border-color:var(--accent)}
+}
 `;
 
 function noticeHtml(f) {
@@ -356,7 +278,7 @@ const setNotice = f => { pendingNotice = f || null; };
 function layout(title, body, { refresh } = {}) {
   const u = usageToday();
   const notice = pendingNotice; pendingNotice = null;
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)} — Citation Audit</title><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'> <circle cx='16' cy='16' r='16' fill='%2374d4ff'/> <path d='M9 16.4l4.8 4.9L23 11.4' fill='none' stroke='%230d3b55' stroke-width='3.6' stroke-linecap='round' stroke-linejoin='round'/> </svg>"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">${refresh ? `<meta http-equiv="refresh" content="${refresh}">` : ''}<style>${CSS}</style></head>
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)} — Citation Audit</title><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'> <circle cx='16' cy='16' r='16' fill='%2374d4ff'/> <path d='M9 16.4l4.8 4.9L23 11.4' fill='none' stroke='%230d3b55' stroke-width='3.6' stroke-linecap='round' stroke-linejoin='round'/> </svg>"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">${refresh ? `<meta http-equiv="refresh" content="${refresh}">` : ''}<style>${CSS}</style></head>
 <body><header><a class="brand" href="/">Citation Audit</a><a href="/setup" class="small">Setup check</a><span class="grow"></span><a class="read" href="/setup" title="Daily caps reset at midnight UTC. Click for the full setup check.">calls <b>${u.calls}/${u.calls_limit}</b></a><a class="read" href="/setup" title="Daily caps reset at midnight UTC. Click for the full setup check.">spend <b>$${u.cost.toFixed(3)}</b> of $${u.cost_limit.toFixed(2)}</a><a class="read" href="/setup" title="Click for the full setup check">model <b>${esc(config.model)}</b></a><a class="read" href="/setup" title="Click for the full setup check">search <b>${esc(effectiveChain())}</b></a><a class="read" href="/setup" title="Click for the full setup check">reports <b>${config.serviceAccountJson ? 'Google Sheets' : 'CSV download'}</b></a><a class="read" href="/setup" title="Click for the full setup check">saved <b>${persistEnabled ? 'to GitHub' : 'until restart'}</b></a></header><main>${noticeHtml(notice)}${body}</main></body></html>`;
 }
 
@@ -527,6 +449,20 @@ function inventoryHtml(client, inv, dis = '') {
 function clientPage(slug, watching = null) {
   const client = getClient(slug);
   const live = [...jobs.values()].filter(j => j.slug === slug && !j.done);
+  // After an audit, say plainly whether the listings agree with the source of truth.
+  const lastRun = latestRun(client.id);
+  let verdict = '';
+  if (!live.length && lastRun?.finished_at) {
+    const rows = effectiveFindings(lastRun.id).filter(r => r.effective_status === 'conflict');
+    const profiles = new Set(rows.map(r => r.citation_id)).size;
+    const pending = rows.filter(r => r.qa_open).length;
+    if (rows.length) {
+      const shown = rows.slice(0, 8).map(r => `${r.directory}: ${fieldLabel(r.field).toLowerCase()} is "${r.found}", should be "${r.expected}"${r.qa_open ? ' (awaiting review)' : ''}`);
+      verdict = `<div class="notice error"><button class="x" onclick="this.parentNode.remove()" title="Dismiss" aria-label="Dismiss">&times;</button><b>Inconsistencies found: ${profiles} of ${lastRun.citations_total} profiles disagree with the source of truth</b><div class="detail">${esc(shown.join('\n'))}${rows.length > 8 ? `\nand ${rows.length - 8} more` : ''}</div><div class="small" style="margin-top:8px">${pending ? `${pending} of these still need a review before they reach the client. ` : ''}${link(`/run/${lastRun.id}?filter=conflicts`, 'See every conflict')}</div></div>`;
+    } else if (lastRun.citations_total) {
+      verdict = `<div class="notice ok"><button class="x" onclick="this.parentNode.remove()" title="Dismiss" aria-label="Dismiss">&times;</button><b>No inconsistencies: all ${lastRun.citations_total} profiles agree with the source of truth</b><div class="small muted" style="margin-top:4px">${lastRun.unverified ? `${lastRun.unverified} could not be read and were not compared. ` : ''}Last checked ${esc(lastRun.started_at.slice(0, 10))}. ${link(`/run/${lastRun.id}`, 'Open the run')}</div></div>`;
+    }
+  }
   const liveBanner = live.length
     ? `<div class="notice warn" id="livejob"><b><span class="badge working">working</span> ${esc({ canonical: 'Reading the source of truth', discover: 'Finding profiles', audit: 'Auditing profiles', report: 'Building the report', firstrun: 'Setting up this client' }[live[0].kind] || live[0].kind)}</b><div class="detail" id="livejob-last">${esc(live[0].log.slice(-1)[0] || 'Starting')}</div><div class="small muted" style="margin-top:6px">Updates on its own and reloads when finished. ${link(`/job/${live[0].id}`, 'Full log')}</div></div>
 <script>
@@ -560,10 +496,10 @@ function clientPage(slug, watching = null) {
   const isBusy = busy(slug);
   const active = inv.filter(c => c.status === 'active').length;
   const dis = isBusy ? 'disabled' : '';
-  return layout(client.name, `${liveBanner}<h1>${esc(client.name)} <span class="muted small">${esc(slug)}</span></h1>
+  return layout(client.name, `${liveBanner}${verdict}<h1>${esc(client.name)} <span class="muted small">${esc(slug)}</span></h1>
 <div class="card"><div class="actions">
-<form method="post" action="/client/${slug}/canonical/refresh" class="inline"><button ${dis}>Refresh canonical facts</button></form>
-<form method="post" action="/client/${slug}/discover" class="inline"><button ${dis} class="${active ? 'secondary' : ''}">Discover profiles</button></form>
+<form method="post" action="/client/${slug}/canonical/refresh" class="inline"><button ${dis} class="secondary">Refresh canonical facts</button></form>
+<form method="post" action="/client/${slug}/discover" class="inline"><button ${dis} class="secondary">Discover profiles</button></form>
 <form method="post" action="/client/${slug}/audit" class="inline"><button ${dis}>Run audit${active ? ` (${active} stored profiles)` : ' (will discover first)'}</button> <label class="inline small" style="display:inline"><input type="checkbox" name="rediscover" value="1"> also re-discover</label> <input type="number" name="limit" placeholder="limit" style="width:70px"></form>
 </div>
 <p class="muted small">Website ${client.website ? ext(client.website) : 'not set'}<br>Google Business Profile ${client.gbp_url ? ext(client.gbp_url, 'open') : 'not set'}${client.place_id ? ' (linked to Google)' : ''}<br>Sheet ${client.sheet_id ? ext(`https://docs.google.com/spreadsheets/d/${client.sheet_id}`, 'open') : 'not created yet'}</p>
