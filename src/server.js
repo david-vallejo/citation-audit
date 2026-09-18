@@ -449,10 +449,20 @@ function inventoryHtml(client, inv, dis = '') {
     `<span class="nowrap">${esc(c.discovered_via)}</span> <span class="muted nowrap">${esc(c.discovered_at.slice(0, 10))}</span>`,
     `<form method="post" action="/citation/${c.id}/status" class="inline"><select name="status" onchange="this.form.submit()"><option ${c.status === 'active' ? 'selected' : ''} value="active">active</option><option ${c.status === 'ignored' ? 'selected' : ''} value="ignored">ignore</option><option ${c.status === 'not_client' ? 'selected' : ''} value="not_client">not this business</option><option ${c.status === 'dead' ? 'selected' : ''} value="dead">dead link</option></select></form>`,
   ]);
-  return `<div id="inventory" data-count="${inv.length}"><h2>Citation inventory${inv.length ? ` <span class="muted small">${inv.length} known, ${active} active, re-used on every run</span>` : ''}</h2><div class="card">${inv.length
+  return `<div id="inventory" data-stamp="${inv.length}"><h2>Citation inventory${inv.length ? ` <span class="muted small">${inv.length} known, ${active} active, re-used on every run</span>` : ''}</h2><div class="card">${inv.length
     ? table(['Directory', 'Profile URL', '', 'Status', 'Result', 'Last audited', 'Found via', ''], rows)
     : `<p class="muted small" style="margin:0 0 10px">No profiles stored yet. "Discover profiles" searches for them, or paste one below.</p>`}
 <form method="post" action="/client/${client.slug}/citation/add" class="actions"><input type="url" name="url" placeholder="Add a profile URL manually (https://www.yelp.com/biz/…)" style="width:480px" required><button class="secondary" ${dis}>Add</button></form></div></div>`;
+}
+
+// Rendered on their own so a running job can refresh just these parts of the page.
+function canonicalHtml(client, canon) {
+  const stamp = Object.values(canon).map(c => c.captured_at).sort().pop() || 'none';
+  return `<div id="canonical" data-stamp="${esc(`${Object.keys(canon).length}|${stamp}`)}"><h2>Source of truth</h2><div class="card">${canonicalTable(client, canon)}<p class="muted small" style="margin:12px 0 0">Google Business Profile and the website fill this in. Anything you edit by hand wins and is never overwritten by a refresh.</p></div></div>`;
+}
+function runsHtml(runs, dis = '') {
+  const stamp = runs.map(r => `${r.id}:${r.finished_at || ''}:${r.sheet_url || ''}`).join(',') || 'none';
+  return `<div id="runs" data-stamp="${esc(stamp)}">${runs.length ? `<h2>Audit runs</h2><div class="card">${table(['Started', 'Mode', 'Profiles', 'Consistent', 'Conflicts', 'Unverified', 'Report'], runs.map(r => [link(`/run/${r.id}`, r.started_at.replace('T', ' ').slice(0, 16)), esc(r.mode), String(r.citations_total), String(r.consistent), String(r.conflicts), String(r.unverified), r.sheet_url && r.sheet_url.startsWith('http') ? ext(r.sheet_url, 'Google Sheet') : reportFiles(r.id).length ? link(`/run/${r.id}`, 'Download') : (r.finished_at ? `<form method="post" action="/run/${r.id}/report" class="inline"><button class="secondary" ${dis}>Generate</button></form>` : '<span class="badge working">running</span>')]))}</div>` : ''}</div>`;
 }
 
 function clientPage(slug, watching = null) {
@@ -481,14 +491,18 @@ function clientPage(slug, watching = null) {
     fetch('/job/${live[0].id}/log').then(function (r) { return r.json(); }).then(function (j) {
       if (j.log && j.log.length) last.textContent = j.log[j.log.length - 1];
       if (j.done) { clearInterval(t); location.href = j.next || '/client/${esc(slug)}?watching=${live[0].id}'; return; }
-      // New profiles appear as discovery finds them. Only swap the block when the count
-      // changes, so a URL being typed into the add box is not wiped mid-keystroke.
-      return fetch('/client/${esc(slug)}/inventory').then(function (r) { return r.text(); }).then(function (html) {
-        var cur = document.getElementById('inventory'), tmp = document.createElement('div');
-        tmp.innerHTML = html;
-        var next = tmp.firstElementChild;
-        if (cur && next && next.dataset.count !== cur.dataset.count) cur.replaceWith(next);
-      });
+      // Facts, runs and profiles all change while a job runs. Each block carries a stamp
+      // and is swapped only when the stamp differs, so typing into the add box or an
+      // open edit row is never wiped mid-keystroke.
+      return Promise.all(['canonical', 'runs', 'inventory'].map(function (part) {
+        var cur = document.getElementById(part);
+        if (!cur || cur.querySelector('tr.editing')) return;
+        return fetch('/client/${esc(slug)}/' + part).then(function (r) { return r.text(); }).then(function (html) {
+          var tmp = document.createElement('div'); tmp.innerHTML = html;
+          var next = tmp.firstElementChild;
+          if (next && next.dataset.stamp !== cur.dataset.stamp) cur.replaceWith(next);
+        });
+      }));
     }).catch(function () {});
   }, 2000);
 })();
@@ -514,9 +528,9 @@ function clientPage(slug, watching = null) {
 <p class="muted small">Website ${client.website ? ext(client.website) : 'not set'}<br>Google Business Profile ${client.gbp_url ? ext(client.gbp_url, 'open') : 'not set'}${client.place_id ? ' (linked to Google)' : ''}<br>Sheet ${client.sheet_id ? ext(`https://docs.google.com/spreadsheets/d/${client.sheet_id}`, 'open') : 'not created yet'}</p>
 <form method="post" action="/client/${slug}/set" class="actions"><input type="url" name="website" placeholder="Website address" value="${esc(client.website || '')}" style="width:250px"><span class="offfield"><input type="text" name="gbp_url" placeholder="Google Business Profile link" value="${esc(client.gbp_url || '')}" style="width:330px">${GBP_READS ? '' : `<span class="info" tabindex="0" role="note" aria-label="About this field" title="Saved and kept here for reference. Pulling the name, address, phone and hours out of the profile needs a Google Places API key, which requires Google Cloud billing. Until then, Refresh canonical facts reads the client website instead.">i</span>`}</span><button class="secondary">Save</button></form></div>
 
-<h2>Source of truth</h2><div class="card">${canonicalTable(client, canon)}<p class="muted small" style="margin:12px 0 0">Google Business Profile and the website fill this in. Anything you edit by hand wins and is never overwritten by a refresh.</p></div>${CANON_JS}
+${canonicalHtml(client, canon)}${CANON_JS}
 
-${runs.length ? `<h2>Audit runs</h2><div class="card">${table(['Started', 'Mode', 'Profiles', 'Consistent', 'Conflicts', 'Unverified', 'Report'], runs.map(r => [link(`/run/${r.id}`, r.started_at.replace('T', ' ').slice(0, 16)), esc(r.mode), String(r.citations_total), String(r.consistent), String(r.conflicts), String(r.unverified), r.sheet_url && r.sheet_url.startsWith('http') ? ext(r.sheet_url, 'Google Sheet') : reportFiles(r.id).length ? link(`/run/${r.id}`, 'Download') : (r.finished_at ? `<form method="post" action="/run/${r.id}/report" class="inline"><button class="secondary" ${dis}>Generate</button></form>` : '<span class="muted">running…</span>')]))}</div>` : ''}
+${runsHtml(runs, dis)}
 
 ${inventoryHtml(client, inv, dis)}
 
@@ -704,6 +718,16 @@ async function handle(req, res, body) {
     if ((mm = p.match(/^\/client\/([\w-]+)\/delete$/))) {
       const pg = deleteClientPage(mm[1]);
       return pg ? html(pg) : html(notFoundPage(`There is no client called "${mm[1]}".`), 404);
+    }
+    if ((mm = p.match(/^\/client\/([\w-]+)\/canonical$/))) {
+      const client = get('SELECT * FROM clients WHERE slug = ?', [mm[1]]);
+      if (!client) return html('', 404);
+      return html(canonicalHtml(client, getCanonical(client.id)));
+    }
+    if ((mm = p.match(/^\/client\/([\w-]+)\/runs$/))) {
+      const client = get('SELECT * FROM clients WHERE slug = ?', [mm[1]]);
+      if (!client) return html('', 404);
+      return html(runsHtml(all('SELECT * FROM audit_runs WHERE client_id = ? ORDER BY started_at DESC', [client.id]), busy(client.slug) ? 'disabled' : ''));
     }
     if ((mm = p.match(/^\/client\/([\w-]+)\/inventory$/))) {
       const client = get('SELECT * FROM clients WHERE slug = ?', [mm[1]]);
