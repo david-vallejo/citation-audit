@@ -31,10 +31,22 @@ export function usageToday() {
   const r = get("SELECT COUNT(*) AS calls, COALESCE(SUM(cost_usd), 0) AS cost, COALESCE(SUM(input_tokens + cache_read + cache_write), 0) AS input_tokens FROM llm_usage WHERE at > ? AND purpose <> 'reset'", [since]);
   return { day, calls: r.calls, cost: r.cost, input_tokens: r.input_tokens, calls_limit: config.dailyClaudeCalls, cost_limit: config.dailyCostLimitUsd, reset_at: reset?.at || null };
 }
+const RESET_INTERVAL_MS = 24 * 60 * 60_000;
+// When the counter may next be reset: 24 hours after the last reset, any day.
+export function nextResetAt() {
+  const last = get("SELECT MAX(at) AS at FROM llm_usage WHERE purpose = 'reset'")?.at;
+  if (!last) return null;
+  const next = Date.parse(last) + RESET_INTERVAL_MS;
+  return next > Date.now() ? new Date(next).toISOString() : null;
+}
+// Once a day at most: the cap exists to bound spend, and a reset that can be
+// pressed repeatedly is no cap at all.
 export function resetUsageToday() {
+  const nextAt = nextResetAt();
+  if (nextAt) return { ok: false, nextAt };
   const before = usageToday();
   insert('llm_usage', { id: uuid(), purpose: 'reset', model: '-', input_tokens: 0, output_tokens: 0, cache_read: 0, cache_write: 0, cost_usd: 0, at: now() });
-  return before;
+  return { ok: true, before };
 }
 export class BudgetError extends Error {}
 function assertBudget() {

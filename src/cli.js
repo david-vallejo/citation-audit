@@ -129,7 +129,7 @@ try {
       break;
     }
     case 'usage': {
-      if (rest[0] === 'reset') { const b = resetUsageToday(); log(`reset; was ${b.calls} calls, $${b.cost.toFixed(3)}`); }
+      if (rest[0] === 'reset') { const r = resetUsageToday(); log(r.ok ? `reset; was ${r.before.calls} calls, $${r.before.cost.toFixed(3)}` : `refused: once every 24 hours, next at ${r.nextAt}`); }
       const u = usageToday(); log(`${u.calls}/${u.calls_limit} calls, $${u.cost.toFixed(3)}/$${u.cost_limit.toFixed(2)}${u.reset_at ? ` (since reset at ${u.reset_at})` : ''}`);
       break;
     }

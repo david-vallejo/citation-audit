@@ -10,7 +10,7 @@ import { classifyUrl } from './discovery/directories.js';
 import { writeReport, runById, reportFiles, reportFile } from './report/sheets.js';
 import { parseAddress, normHours, normServices, normPhone } from './compare/normalize.js';
 import { restore, schedulePersist, persistNow, enabled as persistEnabled } from './persist.js';
-import { usageToday, resetUsageToday } from './extract/claude.js';
+import { usageToday, resetUsageToday, nextResetAt } from './extract/claude.js';
 import { diagnose } from './diagnose.js';
 
 const PORT = process.env.PORT || config.qaPort;
@@ -651,12 +651,13 @@ function setupPage(result) {
   const icon = { ok: '<span class="badge consistent">OK</span>', warn: '<span class="badge unable_to_verify">Optional</span>', fail: '<span class="badge conflict">Blocking</span>' };
   const rows = (result?.checks || []).map(c => [icon[c.status], `<b>${esc(c.name)}</b>`, `<span class="wrap">${esc(c.detail)}</span>${c.fix ? `<div class="small muted">${esc(c.fix)}</div>` : ''}`]);
   const u = usageToday();
+  const nextAt = nextResetAt();
   return layout('Setup check', `<h1>Setup check</h1>
 <div class="card"><p class="muted small">Confirms each key actually works, including one real (about $0.001) Claude call. Run it after changing anything in Render → Environment.</p>
 <p class="actions"><form method="post" action="/setup/run" class="inline"><button>Run the check</button></form> <a class="btn secondary" href="/">Back to clients</a></p></div>
 <h2>Today's usage</h2><div class="card"><p>${u.calls} of ${u.calls_limit} Claude calls and $${u.cost.toFixed(3)} of $${u.cost_limit.toFixed(2)} used${u.reset_at ? ` since the counter was reset at ${esc(u.reset_at.replace('T', ' ').slice(0, 16))} UTC` : ' since midnight UTC'}.</p>
 <p class="muted small">This is the app's own tally for the daily cap. Resetting it lets audits continue today; it does not change what Anthropic bills, and the history is kept.</p>
-<p class="actions"><form method="post" action="/setup/reset-usage" class="inline"><button class="secondary">Reset today's counter</button></form></p></div>
+<p class="actions"><form method="post" action="/setup/reset-usage" class="inline"><button class="secondary" ${nextAt ? 'disabled' : ''}>Reset today's counter</button></form>${nextAt ? `<span class="muted small">Once every 24 hours. Available again ${esc(fmtWhen(nextAt))}.</span>` : '<span class="muted small">Once every 24 hours.</span>'}</p></div>
 ${result ? `<div class="card">${table(['', 'Check', 'Result'], rows)}
 <p class="small muted">${result.blocking ? `<b style="color:var(--bad)">${result.blocking} blocking problem(s).</b> Items marked Optional can be left as they are.` : 'No blocking problems. You can add a client and run an audit.'}</p></div>` : ''}`);
 }
@@ -700,6 +701,14 @@ function parseCanonicalInput(field, raw) {
     case 'year_founded': return parseInt(v, 10) || v;
     default: return v;
   }
+}
+
+// "in 3 hours (2026-09-19 14:58 UTC)" — relative so it reads at a glance, absolute so it is unambiguous.
+function fmtWhen(iso) {
+  const ms = Date.parse(iso) - Date.now();
+  const total = Math.round(ms / 60_000), h = Math.floor(total / 60), m = total % 60;
+  const rel = ms <= 0 ? 'now' : h >= 1 ? `in ${h} hour${h === 1 ? '' : 's'}${m ? ` ${m} min` : ''}` : `in ${Math.max(1, m)} min`;
+  return `${rel} (${iso.replace('T', ' ').slice(0, 16)} UTC)`;
 }
 
 function notFoundPage(what, backHref = '/', backText = 'Back to clients') {
@@ -785,9 +794,10 @@ async function handle(req, res, body) {
     try { f = Object.fromEntries(new URLSearchParams(body)); }
     catch { return bounce('/', 'error', 'That form could not be read', 'Please try again.'); }
     if (p === '/setup/reset-usage') {
-      const before = resetUsageToday();
+      const r = resetUsageToday();
+      if (!r.ok) return bounce('/setup', 'warn', 'The counter can only be reset once every 24 hours', `Available again ${fmtWhen(r.nextAt)}.`);
       schedulePersist();
-      return bounce('/setup', 'ok', 'Counter reset', `It was at ${before.calls} calls and $${before.cost.toFixed(3)}. Both now read zero for the rest of today.`);
+      return bounce('/setup', 'ok', 'Counter reset', `It was at ${r.before.calls} calls and $${r.before.cost.toFixed(3)}. Both now read zero, and the next reset is available ${fmtWhen(new Date(Date.now() + 24 * 60 * 60_000).toISOString())}.`);
     }
     if (p === '/setup/run') {
       try {
