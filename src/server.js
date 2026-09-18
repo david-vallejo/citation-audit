@@ -259,6 +259,18 @@ details.fold[open] summary::before{transform:rotate(90deg)}
 details.fold summary .muted{font-weight:400}
 details.fold summary:hover{color:var(--accent)}
 
+/* ---- the explanation behind a verdict ---- */
+dialog.why{border:1px solid var(--rule); border-radius:var(--r); padding:0; width:min(820px, calc(100vw - 32px)); color:var(--ink); background:var(--sheet); white-space:normal; text-align:left}
+dialog.why .why-body{overflow:auto; max-height:70vh}
+dialog.why td{white-space:normal}
+dialog.why::backdrop{background:rgba(26,35,48,.45)}
+dialog.why .why-head{display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 18px; border-bottom:1px solid var(--rule)}
+dialog.why .why-head b{font-size:14px}
+dialog.why .why-body{padding:16px 18px}
+dialog.why table{font-size:13px}
+dialog.why th{position:static}
+.nowrap .badge + button{margin-left:6px; vertical-align:middle}
+
 /* ---- a field that is switched off, with its explanation ---- */
 .offfield{position:relative; display:inline-flex; align-items:center}
 .offfield input{padding-right:30px}
@@ -473,12 +485,32 @@ document.addEventListener('keydown', function (e) {
 // Rendered on its own so a running job can refresh just this part of the page.
 function inventoryHtml(client, inv, dis = '') {
   const active = inv.filter(c => c.status === 'active').length;
+  // Findings from the latest finished audit, grouped per profile, so a row can explain itself.
+  const run = latestRun(client.id);
+  const byCitation = new Map();
+  if (run?.finished_at) for (const f of effectiveFindings(run.id)) { if (!byCitation.has(f.citation_id)) byCitation.set(f.citation_id, []); byCitation.get(f.citation_id).push(f); }
+  const explain = c => {
+    const fs = byCitation.get(c.id) || [];
+    if (!fs.length) return null;
+    const did = `why-${c.id}`;
+    const conflicts = fs.filter(f => f.effective_status === 'conflict');
+    const problems = conflicts.length ? conflicts : fs.filter(f => f.effective_status === 'unable_to_verify');
+    if (!problems.length) return null;
+    const label = conflicts.length ? "What's wrong" : 'Why';
+    const title = conflicts.length ? `${conflicts.length} field${conflicts.length === 1 ? '' : 's'} on ${c.directory} disagree${conflicts.length === 1 ? 's' : ''} with the source of truth` : `${c.directory} could not be verified`;
+    const body = conflicts.length
+      ? table(['Field', 'Listing says', 'Should be', 'Why it was flagged', ''], conflicts.map(f => [fieldLabel(f.field), `<span class="wrap">${esc(f.found || '')}</span>`, `<span class="wrap">${esc(f.expected || '')}</span>`, `<span class="small">${esc(f.reason || '')}</span>`, f.qa_open ? '<span class="badge unable_to_verify">awaiting review</span>' : '<span class="badge conflict">confirmed</span>']))
+      : `<p>${esc(problems[0].reason || 'No reason recorded')}</p>`;
+    return { button: ` <button type="button" class="secondary small" onclick="document.getElementById('${did}').showModal()">${label}</button>`, dialog: `<dialog id="${did}" class="why"><div class="why-head"><b>${esc(title)}</b><form method="dialog"><button class="secondary small">Close</button></form></div>
+<div class="why-body"><p class="small muted" style="margin:0 0 10px">${ext(c.url)}</p>${body}
+<p class="small" style="margin:12px 0 0">${link(`/citation/${c.id}?run=${run.id}`, 'See the evidence')} for this profile, or ${link(`/run/${run.id}?filter=${conflicts.length ? 'conflicts' : 'all'}`, 'open the audit')}${conflicts.some(f => f.qa_open) ? ' to review it' : ''}.</p></div></dialog>` };
+  };
   const rows = inv.map(c => [
     `<a href="${esc(c.url)}" target="_blank" rel="noopener" style="text-decoration:none"><b>${esc(c.directory)}</b></a>`,
     `<span class="wrap">${ext(c.url)}</span>${c.notes ? `<div class="muted small">${esc(c.notes)}</div>` : ''}`,
     `<a class="btn secondary small" href="${esc(c.url)}" target="_blank" rel="noopener">Open</a>`,
     badge(c.status),
-    c.last_result ? `<span class="badge ${esc(c.last_result)}">${esc({ consistent: 'Matched', conflict: 'Mismatched', unable_to_verify: 'Unable to verify' }[c.last_result] || c.last_result)}</span>` : '',
+    c.last_result ? (x => `<span class="nowrap"><span class="badge ${esc(c.last_result)}">${esc({ consistent: 'Matched', conflict: 'Mismatched', unable_to_verify: 'Unable to verify' }[c.last_result] || c.last_result)}</span>${x ? x.button : ''}</span>${x ? x.dialog : ''}`)(explain(c)) : '',
     `<span class="nowrap">${esc((c.last_audited_at || '').slice(0, 10))}</span>`,
     `<span class="nowrap">${esc(c.discovered_via)}</span> <span class="muted nowrap">${esc(c.discovered_at.slice(0, 10))}</span>`,
     `<form method="post" action="/citation/${c.id}/status" class="inline"><select name="status" onchange="this.form.submit()"><option ${c.status === 'active' ? 'selected' : ''} value="active">active</option><option ${c.status === 'ignored' ? 'selected' : ''} value="ignored">ignore</option><option ${c.status === 'not_client' ? 'selected' : ''} value="not_client">not this business</option><option ${c.status === 'dead' ? 'selected' : ''} value="dead">dead link</option></select></form>`,
