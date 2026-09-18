@@ -8,7 +8,7 @@ import { extractListing, BudgetError, usageToday } from './extract/claude.js';
 import { classify, unverifiedAll, displayCanonical, CONFLICT, UNVERIFIED, CONSISTENT } from './compare/classify.js';
 import { normPhone, fmtPhone } from './compare/normalize.js';
 
-export function targetOf(client, canonical) {
+function targetOf(client, canonical) {
   const addr = canonical.address?.value;
   return { name: canonical.name?.value || client.name, city: typeof addr === 'object' ? addr?.city : '', phone: canonical.phone?.value ? fmtPhone(canonical.phone.value) : '' };
 }

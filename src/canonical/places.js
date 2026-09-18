@@ -47,7 +47,7 @@ function component(comps, type, useShort = false) {
   return c ? (useShort ? c.shortText : c.longText) : '';
 }
 
-export function toCanonical(p) {
+function toCanonical(p) {
   const comps = p.addressComponents;
   const street = [component(comps, 'street_number'), component(comps, 'route', true), component(comps, 'subpremise') ? `Ste ${component(comps, 'subpremise')}` : ''].filter(Boolean).join(' ');
   return {

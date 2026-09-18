@@ -12,12 +12,12 @@ function getClient() {
 const PRICES = { 'claude-haiku-4-5': [1, 5], 'claude-sonnet-5': [2, 10], 'claude-sonnet-4-6': [3, 15], 'claude-opus-5': [5, 25], 'claude-opus-4-8': [5, 25], 'claude-fable-5-1': [10, 50] };
 // The API returns dated ids (claude-haiku-4-5-20251001), so match on the longest
 // price-table key the id starts with rather than requiring an exact hit.
-export function priceFor(model) {
+function priceFor(model) {
   if (PRICES[model]) return PRICES[model];
   const key = Object.keys(PRICES).filter(k => String(model || '').startsWith(k)).sort((a, b) => b.length - a.length)[0];
   return key ? PRICES[key] : PRICES['claude-opus-5'];
 }
-export function estimateCost(model, u) {
+function estimateCost(model, u) {
   const [i, o] = priceFor(model);
   return ((u.input_tokens || 0) * i + (u.cache_read_input_tokens || 0) * i * 0.1 + (u.cache_creation_input_tokens || 0) * i * 1.25 + (u.output_tokens || 0) * o) / 1e6;
 }
@@ -53,7 +53,7 @@ const nullableObject = (props, description) => ({
 // union budget (structured outputs allow at most 16 union-typed parameters).
 const blankable = description => ({ type: 'string', ...(description ? { description } : {}) });
 
-export const LISTING_SCHEMA = {
+const LISTING_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   required: ['is_profile_page', 'name', 'address', 'phone', 'website', 'hours', 'year_founded', 'services', 'categories', 'email', 'confidence', 'notes'],

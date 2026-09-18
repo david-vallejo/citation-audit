@@ -15,7 +15,7 @@ export async function fetchWithTimeout(url, { timeout = 20_000, headers = {} } =
   } catch (e) { clearTimeout(t); throw e; }
 }
 
-export function extractJsonLd(html) {
+function extractJsonLd(html) {
   const out = [];
   const re = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
   let m;
@@ -25,7 +25,7 @@ export function extractJsonLd(html) {
   return out;
 }
 
-export function htmlToText(html) {
+function htmlToText(html) {
   const title = (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || '';
   const desc = (html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']*)["']/i) || [])[1] || '';
   let t = html

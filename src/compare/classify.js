@@ -39,7 +39,7 @@ export function compareAddress(canon, cited) {
   return finding('address', status, confidence, N.fmtAddress(canon), N.fmtAddress(cited), reasons.join('; ') || 'Match after normalization');
 }
 
-export function comparePhone(canon, cited) {
+function comparePhone(canon, cited) {
   const c = N.normPhone(canon), x = N.normPhone(cited);
   if (!x) return missing('phone', N.fmtPhone(canon));
   if (!c) return finding('phone', UNVERIFIED, 1, '', N.fmtPhone(cited), 'No canonical phone on file');
@@ -48,7 +48,7 @@ export function comparePhone(canon, cited) {
   return finding('phone', CONFLICT, 0.97, N.fmtPhone(canon), N.fmtPhone(cited), 'Different number');
 }
 
-export function compareWebsite(canon, cited) {
+function compareWebsite(canon, cited) {
   const c = N.normUrlHost(canon), x = N.normUrlHost(cited);
   if (!x) return missing('website', canon);
   if (!c) return finding('website', UNVERIFIED, 1, '', cited, 'No canonical website on file');
@@ -76,7 +76,7 @@ export function compareHours(canon, cited) {
   return finding('hours', CONSISTENT, coverage === 7 ? 0.95 : 0.8, N.fmtHours(c), N.fmtHours(x), coverage === 7 ? 'All days match' : `${coverage} listed days match`);
 }
 
-export function compareYear(canon, cited) {
+function compareYear(canon, cited) {
   const c = N.normYear(canon), x = N.normYear(cited);
   if (!x) return missing('year_founded', c ?? '');
   if (!c) return finding('year_founded', UNVERIFIED, 1, '', String(x), 'No canonical founding year on file');
@@ -84,7 +84,7 @@ export function compareYear(canon, cited) {
   return finding('year_founded', CONFLICT, Math.abs(c - x) <= 1 ? 0.7 : 0.9, String(c), String(x), 'Different founding year');
 }
 
-export function compareServices(canon, cited) {
+function compareServices(canon, cited) {
   const c = N.normServices(canon), x = N.normServices(cited);
   if (!x.length) return missing('services', c.join(', '));
   if (!c.length) return finding('services', UNVERIFIED, 1, '', x.join(', '), 'No canonical services on file');
@@ -94,7 +94,7 @@ export function compareServices(canon, cited) {
   return finding('services', CONFLICT, extra.length > 2 ? 0.7 : 0.6, c.join(', '), x.join(', '), `Lists services not in canonical set: ${extra.join(', ')}`);
 }
 
-export function compareList(field, canon, cited) {
+function compareList(field, canon, cited) {
   const c = N.normServices(canon), x = N.normServices(cited);
   if (!x.length) return missing(field, c.join(', '));
   if (!c.length) return finding(field, UNVERIFIED, 1, '', x.join(', '), 'No canonical value on file');
@@ -102,7 +102,7 @@ export function compareList(field, canon, cited) {
   return extra.length ? finding(field, CONFLICT, 0.6, c.join(', '), x.join(', '), `Not in canonical set: ${extra.join(', ')}`) : finding(field, CONSISTENT, 0.9, c.join(', '), x.join(', '), 'Match');
 }
 
-export function compareEmail(canon, cited) {
+function compareEmail(canon, cited) {
   const c = N.clean(canon).replace(/\s/g, ''), x = N.clean(cited).replace(/\s/g, '');
   if (!x) return missing('email', canon);
   if (!c) return finding('email', UNVERIFIED, 1, '', cited, 'No canonical email on file');

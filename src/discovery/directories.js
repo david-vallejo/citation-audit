@@ -1,5 +1,5 @@
 // Known citation sources. `profile` matches a business profile URL (vs. a search/category page).
-export const DIRECTORIES = [
+const DIRECTORIES = [
   { key: 'yelp', host: /(^|\.)yelp\.com$/, profile: /\/biz\/[^/?]+/ },
   { key: 'yellowpages', host: /(^|\.)yellowpages\.com$/, profile: /\/mip\/|\/[a-z-]+\/[a-z0-9-]+-\d+$/ },
   { key: 'bbb', host: /(^|\.)bbb\.org$/, profile: /\/profile\// },

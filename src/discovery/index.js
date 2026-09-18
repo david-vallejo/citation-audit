@@ -9,7 +9,7 @@ import * as serpGoogle from './providers/scraperapi-google.js';
 
 const PROVIDERS = { 'scraperapi-google': serpGoogle, ddg, 'google-cse': cse, serpapi: serp };
 
-export function buildQueries(canonical, client) {
+function buildQueries(canonical, client) {
   const name = canonical.name?.value || client.name;
   const addr = canonical.address?.value;
   const city = typeof addr === 'object' ? addr?.city : (addr || '').split(',').slice(-2, -1)[0]?.trim();

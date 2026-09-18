@@ -9,7 +9,7 @@ const TABS = ['Client Action', 'Citation Inventory', 'Internal QA'];
 const label = s => ({ consistent: 'Consistent', conflict: 'Conflict', needs_review: 'Needs Review', unable_to_verify: 'Unable to Verify', dismissed: 'Dismissed (QA)' }[s] || s);
 const fieldLabel = f => ({ name: 'Business Name', address: 'Address', phone: 'Phone', website: 'Website', hours: 'Hours', year_founded: 'Year Founded', services: 'Services', categories: 'Categories', email: 'Email' }[f] || f);
 
-export function buildTabs(run, client) {
+function buildTabs(run, client) {
   const rows = effectiveFindings(run.id);
   const byCitation = new Map();
   for (const r of rows) { if (!byCitation.has(r.citation_id)) byCitation.set(r.citation_id, []); byCitation.get(r.citation_id).push(r); }
@@ -79,7 +79,7 @@ async function ensureSpreadsheet(client) {
   return ss;
 }
 
-export async function writeGoogleSheet(run, client) {
+async function writeGoogleSheet(run, client) {
   const { tabs } = buildTabs(run, client);
   const ss = await ensureSpreadsheet(client);
   const props = Object.fromEntries(ss.sheets.map(s => [s.properties.title, s.properties]));
@@ -110,11 +110,11 @@ export async function writeGoogleSheet(run, client) {
 // ---- CSV fallback (no Google credentials) ----
 const csv = rows => rows.map(r => r.map(v => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; }).join(',')).join('\n') + '\n';
 
-export const fileName = tab => `${tab.toLowerCase().replace(/[^a-z]+/g, '-')}.csv`;
+const fileName = tab => `${tab.toLowerCase().replace(/[^a-z]+/g, '-')}.csv`;
 
 // Kept in the database, not only on disk: a free host wipes the disk on every
 // restart, and the database is what gets backed up.
-export function writeCsvReport(run, client) {
+function writeCsvReport(run, client) {
   const { tabs, meta } = buildTabs(run, client);
   const stamp = run.started_at.slice(0, 19).replace(/[:T]/g, '-');
   const files = TABS.map(t => ({ name: fileName(t), content: csv(tabs[t]) }));

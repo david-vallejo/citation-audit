@@ -32,7 +32,7 @@ export function fmtPhone(s) {
   return d && d.length === 10 ? `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}` : (s ?? '');
 }
 
-export function normStreet(s) {
+function normStreet(s) {
   const tokens = clean(s).split(' ').filter(Boolean).map(t => STREET_ABBR[t] ?? t);
   return tokens.join(' ');
 }
@@ -98,7 +98,7 @@ function toMinutes(h, m, ampm) {
 }
 const hhmm = mins => `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
 
-export function parseHourRange(s) {
+function parseHourRange(s) {
   if (s == null) return null;
   const t = s.toString().toLowerCase().trim();
   if (!t || /^(n\/?a|unknown|not listed)$/.test(t)) return null;

@@ -18,8 +18,6 @@ export async function scrapeWebsite(website, target, { log = console.log } = {})
   const home = await fetchPage(base.toString(), { allowFallbacks: true, skipArchive: true });
   if (home.method === 'blocked' || home.method === 'error') throw new Error(`Could not fetch ${base}: ${home.error}`);
   pages.push({ url: base.toString(), page: home });
-  const links = new Set();
-  for (const m of home.text.matchAll(/\b(about|our story|services|company)\b/gi)) links.add(m[1].toLowerCase());
   for (const path of ABOUT_PATHS) {
     if (pages.length >= 3) break;
     try {

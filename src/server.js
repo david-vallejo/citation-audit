@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Web UI: client setup → canonical facts → discovery → audit → QA queue → Google Sheet. Zero front-end deps.
 import { createServer } from 'node:http';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { config, AUDIT_FIELDS, PHASE2_FIELDS } from './config.js';
 import { all, get, insert, update, uuid, now, getClient, getCanonical, setCanonical, getDb, transaction } from './db.js';
 import { refreshCanonical, runAudit, effectiveFindings, latestRun, suggestion, displayCanonical } from './audit.js';
@@ -88,6 +88,7 @@ async function firstRun(slug, log) {
 
 const jobs = new Map();
 function startJob(kind, slug, fn) {
+  for (const [id, j] of jobs) if (j.done && Date.now() - Date.parse(j.started) > 60 * 60_000) jobs.delete(id);
   const job = { id: uuid(), kind, slug, log: [], done: false, error: null, result: null, started: now() };
   jobs.set(job.id, job);
   const log = m => { job.log.push(m); console.log(`[${slug}] ${m}`); };
@@ -307,7 +308,6 @@ th a.sorted::after{content:" \\2193"; color:var(--blue)}
 /* ---- a control that is off because a key is missing ---- */
 .offfield{position:relative; display:inline-flex; align-items:center}
 .offfield input{padding-right:30px}
-.offfield input:disabled{opacity:.45; cursor:not-allowed}
 .info{
   position:absolute; right:8px; width:16px; height:16px; border-radius:50%;
   border:1px solid var(--blue-deep); color:var(--blue); background:var(--panel-sunk);
@@ -351,7 +351,7 @@ function noticeHtml(f) {
 
 // Set by the router just before a page renders; layout consumes it exactly once.
 let pendingNotice = null;
-export const setNotice = f => { pendingNotice = f || null; };
+const setNotice = f => { pendingNotice = f || null; };
 
 function layout(title, body, { refresh } = {}) {
   const u = usageToday();
@@ -509,7 +509,18 @@ function clientPage(slug, watching = null) {
   const client = getClient(slug);
   const live = [...jobs.values()].filter(j => j.slug === slug && !j.done);
   const liveBanner = live.length
-    ? `<div class="notice warn"><b><span class="badge working">working</span> ${esc({ canonical: 'Reading the source of truth', discover: 'Finding profiles', audit: 'Auditing profiles', report: 'Building the report', firstrun: 'Setting up this client' }[live[0].kind] || live[0].kind)}</b><div class="detail">This page does not update on its own. ${link(`/job/${live[0].id}`, 'Watch the progress')} or reload in a minute.</div></div>`
+    ? `<div class="notice warn" id="livejob"><b><span class="badge working">working</span> ${esc({ canonical: 'Reading the source of truth', discover: 'Finding profiles', audit: 'Auditing profiles', report: 'Building the report', firstrun: 'Setting up this client' }[live[0].kind] || live[0].kind)}</b><div class="detail" id="livejob-last">${esc(live[0].log.slice(-1)[0] || 'Starting')}</div><div class="small muted" style="margin-top:6px">Updates on its own and reloads when finished. ${link(`/job/${live[0].id}`, 'Full log')}</div></div>
+<script>
+(function () {
+  var last = document.getElementById('livejob-last');
+  var t = setInterval(function () {
+    fetch('/job/${live[0].id}/log').then(function (r) { return r.json(); }).then(function (j) {
+      if (j.log && j.log.length) last.textContent = j.log[j.log.length - 1];
+      if (j.done) { clearInterval(t); location.href = '/client/${esc(slug)}?watching=${live[0].id}'; }
+    }).catch(function () {});
+  }, 2000);
+})();
+</script>`
     : watching && jobs.get(watching)?.done && !jobs.get(watching).error
       ? `<div class="notice ok"><button class="x" onclick="this.parentNode.remove()" title="Dismiss" aria-label="Dismiss">&times;</button><b>Finished</b><div class="detail">${esc(jobs.get(watching).log.slice(-1)[0] || '')}</div></div>`
       : '';
@@ -525,7 +536,7 @@ function clientPage(slug, watching = null) {
 <form method="post" action="/client/${slug}/canonical/refresh" class="inline"><button ${dis}>Refresh canonical facts</button></form>
 <form method="post" action="/client/${slug}/discover" class="inline"><button ${dis} class="${active ? 'secondary' : ''}">Discover profiles</button></form>
 <form method="post" action="/client/${slug}/audit" class="inline"><button ${dis}>Run audit${active ? ` (${active} stored profiles)` : ' (will discover first)'}</button> <label class="inline small" style="display:inline"><input type="checkbox" name="rediscover" value="1"> also re-discover</label> <input type="number" name="limit" placeholder="limit" style="width:70px"></form>
-${isBusy ? '<span class="muted">a job is running — see below</span>' : ''}</div>
+</div>
 <p class="muted small">Website ${client.website ? ext(client.website) : 'not set'}<br>Google Business Profile ${client.gbp_url ? ext(client.gbp_url, 'open') : 'not set'}${client.place_id ? ' (linked to Google)' : ''}<br>Sheet ${client.sheet_id ? ext(`https://docs.google.com/spreadsheets/d/${client.sheet_id}`, 'open') : 'not created yet'}</p>
 <form method="post" action="/client/${slug}/set" class="actions"><input type="url" name="website" placeholder="Website address" value="${esc(client.website || '')}" style="width:250px"><span class="offfield"><input type="text" name="gbp_url" placeholder="Google Business Profile link" value="${esc(client.gbp_url || '')}" style="width:330px">${GBP_READS ? '' : `<span class="info" tabindex="0" role="note" aria-label="About this field" title="Saved and kept here for reference. Pulling the name, address, phone and hours out of the profile needs a Google Places API key, which requires Google Cloud billing. Until then, Refresh canonical facts reads the client website instead.">i</span>`}</span><button class="secondary">Save</button></form></div>
 
