@@ -77,3 +77,18 @@ export function setCanonical(clientId, field, value, source, sourceUrl = null, {
   }
   return insert('canonical_facts', { id: uuid(), client_id: clientId, field, value_json: JSON.stringify(value), source, source_url: sourceUrl, captured_at: now() });
 }
+
+// Latest raw read of each source, one row per client. Written on every refresh; manual
+// overrides live in canonical_facts and never touch these.
+function putSource(table, clientId, cols, facts) {
+  run(`DELETE FROM ${table} WHERE client_id = ?`, [clientId]);
+  insert(table, { client_id: clientId, ...cols, facts_json: JSON.stringify(facts), fetched_at: now() });
+}
+function getSource(table, clientId) {
+  const r = get(`SELECT * FROM ${table} WHERE client_id = ?`, [clientId]);
+  return r ? { ...r, facts: JSON.parse(r.facts_json) } : null;
+}
+export const saveGbpProfile = (clientId, gbp) => putSource('gbp_profiles', clientId, { place_id: gbp.place_id }, gbp);
+export const getGbpProfile = clientId => getSource('gbp_profiles', clientId);
+export const saveWebsiteFacts = (clientId, url, facts) => putSource('website_facts', clientId, { url }, facts);
+export const getWebsiteFacts = clientId => getSource('website_facts', clientId);

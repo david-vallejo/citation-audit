@@ -1,5 +1,6 @@
 import { config } from './config.js';
-import { all, get, insert, update, uuid, now, getCanonical, setCanonical } from './db.js';
+import { all, get, insert, update, uuid, now, getCanonical, setCanonical, saveGbpProfile, saveWebsiteFacts, getGbpProfile, getWebsiteFacts } from './db.js';
+import { compareGbpToWebsite } from './compare/gbp.js';
 import { placeDetails, searchPlaces, resolvePlaceInput } from './canonical/places.js';
 import { scrapeWebsite } from './canonical/website.js';
 import { discover } from './discovery/index.js';
@@ -40,6 +41,7 @@ export async function refreshCanonical(client, { log = console.log, lookup = nul
     if (config.placesKey) log('  no Google Business Profile linked, reading the website instead');
   }
   if (gbp) {
+    saveGbpProfile(client.id, gbp);
     for (const f of ['name', 'address', 'phone', 'website', 'hours', 'categories']) {
       if (gbp[f] != null && gbp[f] !== '' && !(Array.isArray(gbp[f]) && !gbp[f].length)) setCanonical(client.id, f, gbp[f], 'gbp', gbp.maps_url);
     }
@@ -50,6 +52,7 @@ export async function refreshCanonical(client, { log = console.log, lookup = nul
     const canon = getCanonical(client.id);
     const site = await scrapeWebsite(website, targetOf(client, canon), { log });
     const src = site.sources[0];
+    saveWebsiteFacts(client.id, website, site.facts);
     for (const f of ['year_founded', 'services', 'email']) if (site.facts[f] != null) setCanonical(client.id, f, site.facts[f], 'website', src);
     for (const f of ['name', 'address', 'phone', 'hours']) if (site.facts[f] != null && !canon[f]) setCanonical(client.id, f, site.facts[f], 'website', src);
     if (!getCanonical(client.id).website) setCanonical(client.id, 'website', website, 'website', src);
@@ -140,6 +143,20 @@ export async function runAudit(client, { rediscover = false, limit = Infinity, p
   log(`Done: ${tally.consistent} consistent, ${tally.conflicts} conflict, ${tally.unverified} unable to verify; ${qa} findings queued for QA`);
   log(`Claude today: ${u.calls}/${u.calls_limit} calls, $${u.cost.toFixed(3)} of $${u.cost_limit.toFixed(2)} cap (${config.model})`);
   return { ...run, ...tally, qa_pending: qa };
+}
+
+// The client's Google Business Profile checked against their own website, from the
+// latest stored read of each. Null until the profile has been read at least once.
+export function gbpCheck(client) {
+  const gbp = getGbpProfile(client.id);
+  if (!gbp) return null;
+  const site = getWebsiteFacts(client.id);
+  return { gbp, site, rows: compareGbpToWebsite(gbp.facts, site?.facts, client.website || site?.url) };
+}
+
+export function gbpSuggestion(r) {
+  if (r.field === 'website') return r.gbp ? `Point the Google Business Profile website link to ${r.website}` : `Add ${r.website} as the website on the Google Business Profile`;
+  return `Google and the website disagree on ${r.field === 'name' ? 'the business name' : r.field}. Update whichever is out of date so both read the same`;
 }
 
 export function effectiveFindings(runId) {

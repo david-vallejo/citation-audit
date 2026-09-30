@@ -26,6 +26,23 @@ CREATE TABLE IF NOT EXISTS canonical_facts (
   UNIQUE (client_id, field)
 );
 
+-- The client's own Google Business Profile as last read through the Places API, and the
+-- facts the client's website states about itself. Kept apart from canonical_facts, which
+-- holds only the winning value per field, so the profile and the site can be compared.
+CREATE TABLE IF NOT EXISTS gbp_profiles (
+  client_id   VARCHAR(36) PRIMARY KEY REFERENCES clients(id),
+  place_id    TEXT NOT NULL,
+  facts_json  TEXT NOT NULL,
+  fetched_at  VARCHAR(32) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS website_facts (
+  client_id   VARCHAR(36) PRIMARY KEY REFERENCES clients(id),
+  url         TEXT NOT NULL,
+  facts_json  TEXT NOT NULL,
+  fetched_at  VARCHAR(32) NOT NULL
+);
+
 -- Persistent inventory. Discovery appends here; audits re-read from here.
 CREATE TABLE IF NOT EXISTS citations (
   id              VARCHAR(36) PRIMARY KEY,

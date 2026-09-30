@@ -39,7 +39,7 @@ export function compareAddress(canon, cited) {
   return finding('address', status, confidence, N.fmtAddress(canon), N.fmtAddress(cited), reasons.join('; ') || 'Match after normalization');
 }
 
-function comparePhone(canon, cited) {
+export function comparePhone(canon, cited) {
   const c = N.normPhone(canon), x = N.normPhone(cited);
   if (!x) return missing('phone', N.fmtPhone(canon));
   if (!c) return finding('phone', UNVERIFIED, 1, '', N.fmtPhone(cited), 'No canonical phone on file');
@@ -48,7 +48,7 @@ function comparePhone(canon, cited) {
   return finding('phone', CONFLICT, 0.97, N.fmtPhone(canon), N.fmtPhone(cited), 'Different number');
 }
 
-function compareWebsite(canon, cited) {
+export function compareWebsite(canon, cited) {
   const c = N.normUrlHost(canon), x = N.normUrlHost(cited);
   if (!x) return missing('website', canon);
   if (!c) return finding('website', UNVERIFIED, 1, '', cited, 'No canonical website on file');

@@ -3,7 +3,7 @@ import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { config } from '../config.js';
 import { get, all, update, now, uuid, getDb } from '../db.js';
-import { effectiveFindings, suggestion } from '../audit.js';
+import { effectiveFindings, suggestion, gbpCheck, gbpSuggestion } from '../audit.js';
 
 const TABS = ['Client Action', 'Citation Inventory', 'Internal QA'];
 const label = s => ({ consistent: 'Consistent', conflict: 'Conflict', needs_review: 'Needs Review', unable_to_verify: 'Unable to Verify', dismissed: 'Dismissed (QA)' }[s] || s);
@@ -15,6 +15,10 @@ function buildTabs(run, client) {
   for (const r of rows) { if (!byCitation.has(r.citation_id)) byCitation.set(r.citation_id, []); byCitation.get(r.citation_id).push(r); }
 
   const action = [['Directory', 'Profile URL', 'Field', 'Currently Listed', 'Should Be', 'Suggested Correction']];
+  // The profile vs the client's own site leads: those are the listings customers see first.
+  const gbp = gbpCheck(client);
+  const GBP_DIR = 'Google Business Profile (vs website)';
+  for (const r of gbp?.rows || []) if (r.status === 'conflict' && !r.needs_qa) action.push([GBP_DIR, gbp.gbp.facts.maps_url || '', fieldLabel(r.field), r.gbp, r.website, gbpSuggestion(r)]);
   for (const r of rows) if (r.effective_status === 'conflict' && !r.qa_open) action.push([r.directory, r.url, fieldLabel(r.field), r.found, r.expected, suggestion(r)]);
 
   const inv = [['Directory', 'Profile URL', 'Status', 'Conflicting Fields', 'Pending Review', 'Last Checked', 'Discovered Via', 'Discovered On']];
@@ -34,10 +38,12 @@ function buildTabs(run, client) {
   }
 
   const qa = [['Directory', 'Profile URL', 'Field', 'Raw Status', 'Effective Status', 'Confidence', 'Needs QA', 'QA Decision', 'QA Note', 'Expected (canonical)', 'Found (cited)', 'Reason', 'Fetch Method', 'HTTP', 'Extraction Confidence', 'Fetch/Extract Error', 'Finding ID']];
+  for (const r of gbp?.rows || []) qa.push([GBP_DIR, gbp.gbp.facts.maps_url || '', fieldLabel(r.field), label(r.status), label(r.status), r.confidence, r.needs_qa ? 'YES' : '', '', '', r.website, r.gbp, r.reason, `Places API ${gbp.gbp.fetched_at.slice(0, 10)}`, '', '', '', '']);
   for (const r of rows) qa.push([r.directory, r.url, fieldLabel(r.field), label(r.status), label(r.effective_status), r.confidence, r.qa_open ? 'YES' : '', r.decision || '', r.qa_note || '', r.expected, r.found, r.reason || '', r.fetch_method || '', r.http_status ?? '', r.extraction_confidence ?? '', r.snapshot_error || '', r.id]);
 
   const skipped = [...new Set(rows.filter(r => /No canonical .* on file/i.test(r.reason || '')).map(r => fieldLabel(r.field)))];
   const meta = [`${client.name} — Citation Audit`, `Run ${run.id} (${run.mode}) started ${run.started_at}`, `${run.citations_total} profiles: ${run.consistent} consistent, ${run.conflicts} conflict, ${run.unverified} unable to verify`,
+    gbp ? `Google Business Profile vs website: ${gbp.rows.filter(r => r.status === 'conflict').length} mismatch(es), profile read ${gbp.gbp.fetched_at.slice(0, 10)}` : 'Google Business Profile not checked (no profile linked, or the Places API key is not set)',
     ...(skipped.length ? [`Not checked anywhere because no canonical value is set: ${skipped.join(', ')}. Set them on the client page and re-run.`] : [])];
   return { tabs: { [TABS[0]]: action, [TABS[1]]: inv, [TABS[2]]: qa }, meta, skipped };
 }

@@ -21,7 +21,7 @@ npm start                # web UI → http://localhost:8322
 ## Web UI workflow (what the demo shows)
 
 1. **Add client** – slug, name, website, and a GBP lookup ("Anvil Fence Garden City ID") or Place ID.
-2. **Refresh canonical facts** – pulls GBP (Places API) + scrapes the website (JSON-LD, about/services pages → Claude) into the *Source of truth* table. Any field can be overridden by hand; manual values are sticky.
+2. **Refresh canonical facts** – pulls GBP (Places API) + scrapes the website (JSON-LD, about/services pages → Claude) into the *Source of truth* table. Any field can be overridden by hand; manual values are sticky. The raw profile is stored per client (`gbp_profiles`) next to what the website says (`website_facts`), and the client page's *Google Business Profile* section compares the two field by field. Mismatches lead the Client Action tab.
 3. **Discover profiles** – runs ~18 branded/phone/`site:` queries through the configured search provider, keeps only real profile URLs on known directories (or unknown hosts that mention the name/phone), and appends them to the inventory. Never re-runs unless asked.
 4. **Run audit** – for every active inventory URL: fetch → extract listing facts with Claude (strict JSON schema) → deterministic normalize + compare → classify. One finding per field per profile. Low-confidence findings get `needs_qa`.
 5. **QA queue** – confirm / dismiss / correct each flagged finding. Evidence page shows the fetched text and the extracted JSON.

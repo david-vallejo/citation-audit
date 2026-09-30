@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
 import { config, AUDIT_FIELDS, PHASE2_FIELDS } from './config.js';
 import { all, get, insert, update, uuid, now, getClient, getCanonical, setCanonical, getDb, transaction } from './db.js';
-import { refreshCanonical, runAudit, effectiveFindings, latestRun, suggestion, displayCanonical } from './audit.js';
+import { refreshCanonical, runAudit, effectiveFindings, latestRun, suggestion, displayCanonical, gbpCheck } from './audit.js';
 import { discover, addCitation, inventory } from './discovery/index.js';
 import { classifyUrl } from './discovery/directories.js';
 import { writeReport, runById, reportFiles, reportFile } from './report/sheets.js';
@@ -355,9 +355,19 @@ function homePage(sort = 'name') {
 <div class="small" style="margin-top:4px">${esc(items.slice(0, 4).join('; '))}${items.length > 4 ? `; and ${items.length - 4} more` : ''}</div>
 <div class="small muted">${pending ? `${pending} awaiting review. ` : ''}${link(`/run/${c.run.id}?filter=conflicts`, 'See details')}</div>`;
   };
+  // Google Business Profile vs the client's own site: the first thing to know about a client.
+  const gbpCell = c => {
+    if (!GBP_READS) return '<span class="muted small">not connected</span>';
+    const check = gbpCheck(c);
+    if (!check) return `<span class="muted small">${c.gbp_url ? 'not read yet' : 'no profile linked'}</span>`;
+    if (!check.site) return '<span class="muted small">website not read</span>';
+    const bad = check.rows.filter(r => r.status === 'conflict');
+    return bad.length ? `<span class="badge conflict">Mismatch</span><div class="small" style="margin-top:4px">${esc(bad.map(r => fieldLabel(r.field).toLowerCase()).join(', '))}</div>` : '<span class="badge consistent">Matches</span>';
+  };
   const rows = clients.map(c => [
     link(`/client/${c.slug}`, c.name),
     c.website ? ext(c.website, c.website.replace(/^https?:\/\//, '')) : '',
+    gbpCell(c),
     String(c.inv),
     c.run ? link(`/run/${c.run.id}`, c.run.started_at.slice(0, 10)) : '<span class="muted">never</span>',
     inconsistencies(c),
@@ -365,13 +375,13 @@ function homePage(sort = 'name') {
   ]);
   return layout('Clients', `${firstRun ? '<div class="card"><b>First time here?</b> Run the <a href="/setup">setup check</a> to confirm your keys work, then add a client below.</div>' : ''}<h1>Clients</h1>
 <div class="card">
-${table([th('name'), 'Website', th('profiles'), th('recent'), th('conflicts'), ''], rows)}
+${table([th('name'), 'Website', 'Google vs website', th('profiles'), th('recent'), th('conflicts'), ''], rows)}
 ${clients.length > 1 ? `<p class="muted small" style="margin:10px 0 0">Sorted by ${esc(CLIENT_SORTS[sort].label.toLowerCase())}. Click another heading to change it.</p>` : ''}</div>
 <h2>Add a client</h2><div class="card"><form method="post" action="/client/add"><div class="grid">
 <div><label>Slug (short id)</label><input type="text" name="slug" required placeholder="anvilfence"></div>
 <div><label>Business name</label><input type="text" name="name" required placeholder="Anvil Fence Company"></div>
 <div><label>Website</label><input type="url" name="website" placeholder="https://anvilfence.com"></div>
-<div><label>Google Business Profile (optional)</label><input type="text" name="gbp_url" placeholder="Paste the Google Maps link"></div>
+<div><label>Google Business Profile</label><input type="text" name="gbp_url" placeholder="Paste the Google Maps link"></div>
 </div><p class="actions"><button>Add client and run the first audit</button>
 <label class="inline small muted" style="display:inline-flex; align-items:center; gap:6px"><input type="checkbox" name="autorun" value="1" checked style="width:auto"> run it now</label></p>
 <p class="muted small">Running it reads the website for the source of truth, finds directory profiles, checks each one and builds the report. It takes a few minutes and costs a few cents. Untick to add the client and run it later.</p></form></div>`);
@@ -417,6 +427,8 @@ function deleteClient(clientId) {
     d('DELETE FROM audit_runs WHERE client_id = ?');
     d('DELETE FROM citations WHERE client_id = ?');
     d('DELETE FROM canonical_facts WHERE client_id = ?');
+    d('DELETE FROM gbp_profiles WHERE client_id = ?');
+    d('DELETE FROM website_facts WHERE client_id = ?');
     d('DELETE FROM discovery_log WHERE client_id = ?');
     d('DELETE FROM clients WHERE id = ?');
   });
@@ -526,6 +538,25 @@ function canonicalHtml(client, canon) {
   const stamp = Object.values(canon).map(c => c.captured_at).sort().pop() || 'none';
   return `<div id="canonical" data-stamp="${esc(`${Object.keys(canon).length}|${stamp}`)}"><h2>Source of truth</h2><div class="card">${canonicalTable(client, canon)}<p class="muted small" style="margin:12px 0 0">Google Business Profile and the website fill this in. Anything you edit by hand wins and is never overwritten by a refresh.</p></div></div>`;
 }
+// The client's own Google Business Profile, as stored, set against what their website says.
+function gbpHtml(client) {
+  const check = GBP_READS ? gbpCheck(client) : null;
+  const wrap = (stamp, body) => `<div id="gbp" data-stamp="${esc(stamp)}"><h2>Google Business Profile vs website <span class="muted small">name, address, phone</span></h2><div class="card">${body}</div></div>`;
+  if (!GBP_READS) return wrap('off', `<p class="muted small" style="margin:0">Not connected. Reading the profile needs <code>GOOGLE_PLACES_API_KEY</code> (Places API (New) on a Google Cloud project with billing). Once it is set, this section shows the profile and flags anything that disagrees with the website.</p>`);
+  if (!check) return wrap('none', `<p class="muted small" style="margin:0">${client.gbp_url ? 'Linked but not read yet. Press <b>Refresh canonical facts</b>.' : 'No profile linked. Paste the Google Maps link in the Google Business Profile box below, press Save, then <b>Refresh canonical facts</b>.'}</p>`);
+  const { gbp, site, rows } = check, g = gbp.facts;
+  const bad = rows.filter(r => r.status === 'conflict');
+  const closed = g.status && g.status !== 'OPERATIONAL';
+  const head = `<p class="small" style="margin:0 0 10px"><b>${esc(g.name)}</b> · ${g.maps_url ? ext(g.maps_url, 'Open on Google Maps') : ''} · <span class="muted">read ${esc(gbp.fetched_at.slice(0, 10))}${site ? `, website read ${esc(site.fetched_at.slice(0, 10))}` : ''}</span></p>`
+    + (closed ? `<div class="notice error"><b>Google lists this business as ${esc(g.status.replace(/_/g, ' ').toLowerCase())}</b></div>` : '')
+    + (!site ? `<div class="notice warn"><b>The website has not been read yet, so nothing was compared</b><div class="detail">Add the website below and press Refresh canonical facts.</div></div>`
+      : bad.length ? `<div class="notice error"><b>The profile and the website disagree on ${bad.map(r => fieldLabel(r.field).toLowerCase()).join(', ')}</b><div class="detail">Customers who find the business on Google see different details from the ones on the site.</div></div>`
+      : `<div class="notice ok"><b>The profile matches the website</b></div>`);
+  const body = table(['Field', 'Google Business Profile', 'Website', 'Result', 'Why'], rows.map(r => [fieldLabel(r.field), `<span class="wrap">${esc(r.gbp)}</span>`, `<span class="wrap">${esc(r.website)}</span>`, badge(r.status), `<span class="small">${esc(r.reason)}${r.needs_qa ? ' <span class="muted">(low confidence, check by eye)</span>' : ''}</span>`]));
+  const extra = [g.categories?.length ? `Categories: ${g.categories.join(', ')}` : '', g.formatted_address ? `Full address on Google: ${g.formatted_address}` : ''].filter(Boolean);
+  return wrap(`${gbp.fetched_at}|${site?.fetched_at || ''}`, head + body + (extra.length ? `<p class="muted small" style="margin:12px 0 0">${esc(extra.join(' · '))}</p>` : ''));
+}
+
 function runsHtml(runs, dis = '') {
   const stamp = runs.map(r => `${r.id}:${r.finished_at || ''}:${r.sheet_url || ''}`).join(',') || 'none';
   return `<div id="runs" data-stamp="${esc(stamp)}">${runs.length ? `<h2>Audit runs</h2><div class="card">${table(['Started', 'Mode', 'Profiles', 'Consistent', 'Conflicts', 'Unverified', 'Report'], runs.map(r => [link(`/run/${r.id}`, r.started_at.replace('T', ' ').slice(0, 16)), esc(r.mode), String(r.citations_total), String(r.consistent), String(r.conflicts), String(r.unverified), r.sheet_url && r.sheet_url.startsWith('http') ? ext(r.sheet_url, 'Google Sheet') : reportFiles(r.id).length ? link(`/run/${r.id}`, 'Download') : (r.finished_at ? `<form method="post" action="/run/${r.id}/report" class="inline"><button class="secondary" ${dis}>Generate</button></form>` : '<span class="badge working">running</span>')]))}</div>` : ''}</div>`;
@@ -560,7 +591,7 @@ function clientPage(slug, watching = null) {
       // Facts, runs and profiles all change while a job runs. Each block carries a stamp
       // and is swapped only when the stamp differs, so typing into the add box or an
       // open edit row is never wiped mid-keystroke.
-      return Promise.all(['canonical', 'runs', 'inventory'].map(function (part) {
+      return Promise.all(['gbp', 'canonical', 'runs', 'inventory'].map(function (part) {
         var cur = document.getElementById(part);
         if (!cur || cur.querySelector('tr.editing')) return;
         return fetch('/client/${esc(slug)}/' + part).then(function (r) { return r.text(); }).then(function (html) {
@@ -585,7 +616,9 @@ function clientPage(slug, watching = null) {
   const isBusy = busy(slug);
   const active = inv.filter(c => c.status === 'active').length;
   const dis = isBusy ? 'disabled' : '';
-  return layout(client.name, `${liveBanner}${verdict}<p class="crumb"><a href="/">Clients</a> / ${esc(client.name)}</p><h1>${esc(client.name)} <span class="muted small">${esc(slug)}</span></h1>
+  return layout(client.name, `${liveBanner}<p class="crumb"><a href="/">Clients</a> / ${esc(client.name)}</p><h1>${esc(client.name)} <span class="muted small">${esc(slug)}</span></h1>
+${gbpHtml(client)}
+${verdict}
 <div class="card"><div class="actions">
 <form method="post" action="/client/${slug}/canonical/refresh" class="inline"><button ${dis} class="secondary">Refresh canonical facts</button></form>
 <form method="post" action="/client/${slug}/discover" class="inline"><button ${dis} class="secondary">Discover profiles</button></form>
@@ -808,6 +841,11 @@ async function handle(req, res, body) {
       if (!client) return html('', 404);
       return html(canonicalHtml(client, getCanonical(client.id)));
     }
+    if ((mm = p.match(/^\/client\/([\w-]+)\/gbp$/))) {
+      const client = get('SELECT * FROM clients WHERE slug = ?', [mm[1]]);
+      if (!client) return html('', 404);
+      return html(gbpHtml(client));
+    }
     if ((mm = p.match(/^\/client\/([\w-]+)\/runs$/))) {
       const client = get('SELECT * FROM clients WHERE slug = ?', [mm[1]]);
       if (!client) return html('', 404);
@@ -915,7 +953,7 @@ async function handle(req, res, body) {
       }
       const changed = gbp !== (client.gbp_url || '');
       update('clients', client.id, { website: f.website?.trim() || null, gbp_url: gbp || null, updated_at: now() });
-      if (changed) update('clients', client.id, { place_id: null, updated_at: now() });
+      if (changed) { update('clients', client.id, { place_id: null, updated_at: now() }); getDb().prepare('DELETE FROM gbp_profiles WHERE client_id = ?').run(client.id); }
       schedulePersist();
       if (gbp && changed && config.placesKey) {
         const j = startJob('canonical', client.slug, log => refreshCanonical(getClient(client.slug), { log, lookup: gbp }));
