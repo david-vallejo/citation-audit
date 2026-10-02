@@ -374,9 +374,6 @@ function homePage(sort = 'name') {
     `<a class="btn secondary small" href="/client/${c.slug}/delete">Delete</a>`,
   ]);
   return layout('Clients', `${firstRun ? '<div class="card"><b>First time here?</b> Run the <a href="/setup">setup check</a> to confirm your keys work, then add a client below.</div>' : ''}<h1>Clients</h1>
-<div class="card">
-${table([th('name'), 'Website', 'Google vs website', th('profiles'), th('recent'), th('conflicts'), ''], rows)}
-${clients.length > 1 ? `<p class="muted small" style="margin:10px 0 0">Sorted by ${esc(CLIENT_SORTS[sort].label.toLowerCase())}. Click another heading to change it.</p>` : ''}</div>
 <h2>Add a client</h2><div class="card"><form method="post" action="/client/add"><div class="grid">
 <div><label>Slug (short id)</label><input type="text" name="slug" required placeholder="anvilfence"></div>
 <div><label>Business name</label><input type="text" name="name" required placeholder="Anvil Fence Company"></div>
@@ -384,7 +381,10 @@ ${clients.length > 1 ? `<p class="muted small" style="margin:10px 0 0">Sorted by
 <div><label>Google Business Profile</label><input type="text" name="gbp_url" placeholder="Paste the Google Maps link"></div>
 </div><p class="actions"><button>Add client and run the first audit</button>
 <label class="inline small muted" style="display:inline-flex; align-items:center; gap:6px"><input type="checkbox" name="autorun" value="1" checked style="width:auto"> run it now</label></p>
-<p class="muted small">Running it reads the website for the source of truth, finds directory profiles, checks each one and builds the report. It takes a few minutes and costs a few cents. Untick to add the client and run it later.</p></form></div>`);
+<p class="muted small">Running it reads the website for the source of truth, finds directory profiles, checks each one and builds the report. It takes a few minutes and costs a few cents. Untick to add the client and run it later.</p></form></div>
+<h2>All clients</h2><div class="card">
+${table([th('name'), 'Website', 'Google vs website', th('profiles'), th('recent'), th('conflicts'), ''], rows)}
+${clients.length > 1 ? `<p class="muted small" style="margin:10px 0 0">Sorted by ${esc(CLIENT_SORTS[sort].label.toLowerCase())}. Click another heading to change it.</p>` : ''}</div>`);
 }
 
 // Everything that belongs to one client, newest dependants first so foreign keys hold.
