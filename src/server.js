@@ -245,7 +245,7 @@ pre.log.live::after{content:"\\2588"; color:var(--accent); animation:blink 1.1s 
 .tabs a{padding:8px 0 9px; color:var(--muted); text-decoration:none; font-size:13.5px; border-bottom:2px solid transparent; margin-bottom:-1px}
 .tabs a:hover{color:var(--ink)}
 .tabs a.on{color:var(--ink); font-weight:600; border-bottom-color:var(--accent)}
-.tabs .pdf-btn{margin-left:auto; align-self:center}
+.tabs button.pdf-btn{margin-left:auto; align-self:center; color:#ffffff; background:#009ce1; padding:20px 30px; text-transform:uppercase; display:inline-flex; flex-direction:row; flex-wrap:nowrap; align-content:center; justify-content:center; align-items:center; margin-bottom:30px}
 .print-only{display:none}
 @media print{
   @page{size:landscape; margin:12mm}
