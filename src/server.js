@@ -668,7 +668,7 @@ var body=[].map.call(tbl.querySelectorAll('tbody tr'),function(tr){return [].map
 if(drop){head=head.slice(0,-1);body=body.map(function(r){return r.length>1?r.slice(0,-1):r})}
 doc.setFontSize(15);doc.setTextColor(20);doc.text(d.client,40,42);
 doc.setFontSize(9);doc.setTextColor(95);doc.text(d.sub,40,58);doc.text(d.stats,40,71);
-doc.autoTable({head:[head],body:body,startY:84,theme:'grid',styles:{fontSize:7.5,cellPadding:4,overflow:'linebreak',valign:'top',textColor:30,lineColor:[220,224,230]},headStyles:{fillColor:[238,241,245],textColor:20,fontStyle:'bold'},margin:{left:40,right:40},
+doc.autoTable({head:[head],body:body,startY:84,theme:'grid',styles:{fontSize:7.5,cellPadding:4,overflow:'linebreak',valign:'top',textColor:30,lineColor:[220,224,230]},headStyles:{fillColor:[238,241,245],textColor:20,fontStyle:'bold'},margin:{left:40,right:40},didParseCell:function(h){if(h.section!=='body'||head[h.column.index]!=='Status')return;var t=String(h.cell.raw||'').toLowerCase(),c=t.indexOf('conflict')>-1?[[179,38,30],[251,233,231]]:t.indexOf('consistent')>-1?[[30,127,79],[230,244,236]]:t.indexOf('unable')>-1?[[154,103,0],[251,243,217]]:t.indexOf('dismissed')>-1?[[110,110,110],[242,242,242]]:null;if(c){h.cell.styles.textColor=c[0];h.cell.styles.fillColor=c[1];h.cell.styles.fontStyle='bold'}},
 didDrawPage:function(){var n=doc.internal.getNumberOfPages(),h=doc.internal.pageSize.getHeight(),w=doc.internal.pageSize.getWidth();doc.setFontSize(8);doc.setTextColor(140);doc.text(d.client+' - Citation Audit',40,h-20);doc.text('Page '+n,w-40,h-20,{align:'right'})}});
 doc.save(d.title+'.pdf');
 }catch(e){alert('The PDF could not be created: '+e.message)}finally{btn.disabled=false;btn.textContent=label}}
