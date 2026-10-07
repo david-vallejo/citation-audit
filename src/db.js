@@ -21,6 +21,7 @@ export function getDb() {
 const ADDED_COLUMNS = [
   ['clients', 'gbp_url', 'VARCHAR(700)'],
   ['citations', 'search_snippet', 'TEXT'],
+  ['clients', 'previous_json', 'TEXT'],
 ];
 function migrate(d) {
   for (const [table, column, type] of ADDED_COLUMNS) {
@@ -58,6 +59,28 @@ export function getClient(slug) {
   const c = get('SELECT * FROM clients WHERE slug = ?', [slug]);
   if (!c) throw new Error(`Unknown client "${slug}". Run: node src/cli.js client add ${slug} --name "..." --website https://...`);
   return c;
+}
+
+// Contact details the business used to have: an old address or phone that outdated
+// listings still show. Discovery searches for them and the audit treats a listing that
+// shows them as this business with old info, not as some other business.
+export function getPrevious(client) {
+  let p = {};
+  try { p = JSON.parse(client?.previous_json || '{}') || {}; } catch { p = {}; }
+  return { addresses: Array.isArray(p.addresses) ? p.addresses.filter(Boolean) : [], phones: Array.isArray(p.phones) ? p.phones.filter(Boolean) : [] };
+}
+
+export function parsePreviousInput(text) {
+  const addresses = [], phones = [];
+  for (const raw of String(text || '').split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    const digits = line.replace(/\D/g, '');
+    const letters = line.replace(/[^a-z]/gi, '');
+    if ((digits.length === 10 || (digits.length === 11 && digits.startsWith('1'))) && letters.length <= 3) phones.push(line);
+    else addresses.push(line);
+  }
+  return { addresses, phones };
 }
 
 export function getCanonical(clientId) {

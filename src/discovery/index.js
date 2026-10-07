@@ -1,6 +1,6 @@
 import { config } from '../config.js';
-import { all, get, insert, uuid, now } from '../db.js';
-import { normalizeUrl, normUrlHost, normPhone } from '../compare/normalize.js';
+import { all, get, insert, uuid, now, getPrevious } from '../db.js';
+import { normalizeUrl, normUrlHost, normPhone, parseAddress } from '../compare/normalize.js';
 import { classifyUrl, PRIORITY_KEYS, PRIORITY_SITES } from './directories.js';
 import * as ddg from './providers/ddg.js';
 import * as cse from './providers/google-cse.js';
@@ -9,7 +9,25 @@ import * as serpGoogle from './providers/scraperapi-google.js';
 
 const PROVIDERS = { 'scraperapi-google': serpGoogle, ddg, 'google-cse': cse, serpapi: serp };
 
-function buildQueries(canonical, client) {
+const phoneQuery = p => `"${p.slice(0, 3)}-${p.slice(3, 6)}-${p.slice(6)}" OR "(${p.slice(0, 3)}) ${p.slice(3, 6)}-${p.slice(6)}"`;
+
+// Outdated listings only show the old details, so a search for the current address and
+// phone never finds them. Search the previous ones explicitly, directory by directory.
+function previousQueries(name, previous) {
+  const q = [];
+  for (const raw of previous.phones) { const p = normPhone(raw); if (p) q.push(phoneQuery(p)); }
+  for (const raw of previous.addresses) {
+    const a = parseAddress(raw);
+    if (!a) continue;
+    const loc = [a.city, a.state].filter(Boolean).join(' ');
+    if (loc) q.push(`"${name}" ${loc}`);
+    if (a.street) q.push(`"${name}" "${a.street}"`);
+    if (a.city) for (const k of PRIORITY_KEYS.slice(0, config.discoverySiteQueries)) q.push(`"${name}" ${a.city} site:${PRIORITY_SITES[k]}`);
+  }
+  return q;
+}
+
+export function buildQueries(canonical, client) {
   const name = canonical.name?.value || client.name;
   const addr = canonical.address?.value;
   const city = typeof addr === 'object' ? addr?.city : (addr || '').split(',').slice(-2, -1)[0]?.trim();
@@ -17,9 +35,10 @@ function buildQueries(canonical, client) {
   const phone = canonical.phone?.value ? normPhone(canonical.phone.value) : null;
   const loc = [city, state].filter(Boolean).join(' ');
   const q = [`"${name}" ${loc}`.trim()];
-  if (phone) q.push(`"${phone.slice(0, 3)}-${phone.slice(3, 6)}-${phone.slice(6)}" OR "(${phone.slice(0, 3)}) ${phone.slice(3, 6)}-${phone.slice(6)}"`);
+  if (phone) q.push(phoneQuery(phone));
   q.push(`"${name}" ${loc} reviews`.trim());
   for (const k of PRIORITY_KEYS.slice(0, config.discoverySiteQueries)) q.push(`"${name}" ${city || ''} site:${PRIORITY_SITES[k]}`.replace(/\s+/g, ' '));
+  for (const extra of previousQueries(name, getPrevious(client))) if (!q.includes(extra)) q.push(extra);
   return q;
 }
 
@@ -44,6 +63,7 @@ export async function discover(client, canonical, { provider = config.discoveryP
   const current = () => chain[idx];
   const clientHost = normUrlHost(client.website || canonical.website?.value);
   const phone = canonical.phone?.value ? normPhone(canonical.phone.value) : null;
+  const oldPhones = getPrevious(client).phones.map(normPhone).filter(Boolean);
   // A result has to name this business, not just any fence company in the same town.
   // "site:yelp.com" queries return competitors too, and the audit would then spend
   // credits reading them and flag every field as a conflict. Match on the words that
@@ -61,7 +81,9 @@ export async function discover(client, canonical, { provider = config.discoveryP
     // the client there. The URL slug and the page title do not lie; require the match in those.
     const strong = clean(`${r.title} ${r.url}`);
     const anywhere = clean(`${r.title} ${r.snippet} ${r.url}`);
-    if (phone && anywhere.replace(/\D/g, '').includes(phone)) return true;
+    const digits = anywhere.replace(/\D/g, '');
+    if (phone && digits.includes(phone)) return true;
+    if (oldPhones.some(p => digits.includes(p))) return true;
     if (distinctive.length) return distinctive.some(t => strong.includes(t));
     return strong.includes(namePhrase);
   };

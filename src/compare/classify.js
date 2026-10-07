@@ -115,7 +115,27 @@ const COMPARATORS = {
   categories: (c, x) => compareList('categories', c, x), email: compareEmail,
 };
 
-export function classify(canonical, extracted, { extractionConfidence = 1, phase2 = false } = {}) {
+// True when a listing shows one of the business's previous phones or addresses: that
+// is this business with outdated info, the most common thing a client asks us to fix.
+export function matchesPreviousPhone(previous, cited) {
+  const x = N.normPhone(cited);
+  return !!x && (previous?.phones || []).some(p => N.normPhone(p) === x);
+}
+export function matchesPreviousAddress(previous, cited) {
+  const x = N.parseAddress(cited);
+  if (!x || !(x.street || x.city)) return false;
+  const xs = N.splitStreet(x.street).base;
+  return (previous?.addresses || []).some(prev => {
+    const p = N.parseAddress(prev);
+    if (!p) return false;
+    const ps = N.splitStreet(p.street).base;
+    if (ps && xs && (ps === xs || N.similarity(ps, xs) >= 0.85)) return true;
+    return !!p.city && !!x.city && N.clean(p.city) === N.clean(x.city) && (!N.normZip(p.zip) || !N.normZip(x.zip) || N.normZip(p.zip) === N.normZip(x.zip)) && !xs;
+  });
+}
+export const OLD_INFO_PREFIX = 'Still shows the previous';
+
+export function classify(canonical, extracted, { extractionConfidence = 1, phase2 = false, previous = null } = {}) {
   const fields = phase2 ? [...AUDIT_FIELDS, ...PHASE2_FIELDS] : AUDIT_FIELDS;
   const out = [];
   for (const field of fields) {
@@ -124,6 +144,11 @@ export function classify(canonical, extracted, { extractionConfidence = 1, phase
     const f = COMPARATORS[field](canon, extracted?.[field]);
     f.confidence = Math.round(Math.min(f.confidence, Math.max(extractionConfidence, 0.3)) * 100) / 100;
     if (f.status !== UNVERIFIED && f.confidence < config.qaThreshold) f.needs_qa = 1;
+    if (f.status === CONFLICT && previous && ((field === 'phone' && matchesPreviousPhone(previous, extracted?.phone)) || (field === 'address' && matchesPreviousAddress(previous, extracted?.address)))) {
+      f.reason = `${OLD_INFO_PREFIX} ${field} (outdated listing for this business)`;
+      f.confidence = 0.95;
+      f.needs_qa = 0;
+    }
     out.push(f);
   }
   return out;

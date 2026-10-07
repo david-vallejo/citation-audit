@@ -1,17 +1,17 @@
 import { config } from './config.js';
-import { all, get, insert, update, uuid, now, getCanonical, setCanonical, saveGbpProfile, saveWebsiteFacts, getGbpProfile, getWebsiteFacts } from './db.js';
+import { all, get, insert, update, uuid, now, getCanonical, setCanonical, saveGbpProfile, saveWebsiteFacts, getGbpProfile, getWebsiteFacts, getPrevious } from './db.js';
 import { compareGbpToWebsite } from './compare/gbp.js';
 import { placeDetails, searchPlaces, resolvePlaceInput } from './canonical/places.js';
 import { scrapeWebsite } from './canonical/website.js';
 import { discover } from './discovery/index.js';
 import { fetchPage, mapLimit } from './fetch/page.js';
 import { extractListing, BudgetError, usageToday } from './extract/claude.js';
-import { classify, unverifiedAll, displayCanonical, CONFLICT, UNVERIFIED, CONSISTENT } from './compare/classify.js';
+import { classify, unverifiedAll, displayCanonical, matchesPreviousPhone, matchesPreviousAddress, OLD_INFO_PREFIX, CONFLICT, UNVERIFIED, CONSISTENT } from './compare/classify.js';
 import { normPhone, fmtPhone } from './compare/normalize.js';
 
 function targetOf(client, canonical) {
   const addr = canonical.address?.value;
-  return { name: canonical.name?.value || client.name, city: typeof addr === 'object' ? addr?.city : '', phone: canonical.phone?.value ? fmtPhone(canonical.phone.value) : '' };
+  return { name: canonical.name?.value || client.name, city: typeof addr === 'object' ? addr?.city : '', phone: canonical.phone?.value ? fmtPhone(canonical.phone.value) : '', previous: getPrevious(client) };
 }
 
 export async function refreshCanonical(client, { log = console.log, lookup = null, skipWebsite = false } = {}) {
@@ -86,13 +86,14 @@ async function auditOne(run, client, canonical, target, citation, log) {
     if (!findings) {
       const { data } = await extractListing(source, citation.url, target);
       snapshot.extracted_json = JSON.stringify(data); snapshot.extraction_confidence = data.confidence;
-      if (!data.is_profile_page && data.confidence < 0.5) {
+      const oldInfo = matchesPreviousPhone(target.previous, data.phone) || matchesPreviousAddress(target.previous, data.address);
+      if (!data.is_profile_page && data.confidence < 0.5 && !oldInfo) {
         findings = unverifiedAll(`Page is not a single-business profile (${data.notes || 'no matching listing found'})`, canonical);
       } else {
-        findings = classify(canonical, data, { extractionConfidence: Math.min(data.confidence, cap) });
+        findings = classify(canonical, data, { extractionConfidence: Math.min(oldInfo ? Math.max(data.confidence, 0.85) : data.confidence, cap), previous: target.previous });
         const nameF = findings.find(f => f.field === 'name');
-        if (nameF?.status === CONFLICT && nameF.confidence < 0.6) for (const f of findings) if (f.status !== UNVERIFIED) f.needs_qa = 1;
-        if (data.confidence < 0.5) for (const f of findings) if (f.status !== UNVERIFIED) f.needs_qa = 1;
+        if (!oldInfo && nameF?.status === CONFLICT && nameF.confidence < 0.6) for (const f of findings) if (f.status !== UNVERIFIED) f.needs_qa = 1;
+        if (!oldInfo && data.confidence < 0.5) for (const f of findings) if (f.status !== UNVERIFIED) f.needs_qa = 1;
         if (evidenceNote) for (const f of findings) { f.reason = (f.reason || '') + evidenceNote; if (f.status !== UNVERIFIED) f.needs_qa = 1; }
       }
     }
@@ -182,6 +183,7 @@ export function latestRun(clientId) {
 
 export function suggestion(f) {
   const where = f.directory;
+  if ((f.reason || '').startsWith(OLD_INFO_PREFIX) && (f.field === 'phone' || f.field === 'address')) return `Still shows the old ${f.field} (${f.found}). Update ${where} to ${f.field === 'address' ? `"${f.expected}"` : f.expected}`;
   switch (f.field) {
     case 'phone': return `Update phone on ${where} to ${f.expected}`;
     case 'address': return `Update address on ${where} to "${f.expected}"`;

@@ -3,7 +3,7 @@
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
 import { config, AUDIT_FIELDS, PHASE2_FIELDS } from './config.js';
-import { all, get, insert, update, uuid, now, getClient, getCanonical, setCanonical, getDb, transaction } from './db.js';
+import { all, get, insert, update, uuid, now, getClient, getCanonical, setCanonical, getDb, transaction, getPrevious, parsePreviousInput } from './db.js';
 import { refreshCanonical, runAudit, effectiveFindings, latestRun, suggestion, displayCanonical, gbpCheck, gbpSuggestion } from './audit.js';
 import { discover, addCitation, inventory } from './discovery/index.js';
 import { classifyUrl } from './discovery/directories.js';
@@ -163,6 +163,8 @@ form.fields{display:grid; grid-template-columns:minmax(220px,1fr) minmax(260px,1
 form.fields .offfield{display:flex; width:100%}
 form.fields .offfield input{width:100%}
 form.fields .fields-save{display:flex; align-items:center; gap:12px; padding-bottom:1px}
+form.fields .fields-previous{grid-column:1 / -1}
+form.fields .fields-previous textarea{width:100%; min-height:62px; resize:vertical}
 @media (max-width:820px){form.fields{grid-template-columns:1fr}}
 
 /* ---- sheets: a white page on the paper, one rule, no shadow ---- */
@@ -627,6 +629,7 @@ ${verdict}
 <form method="post" action="/client/${slug}/set" class="fields">
 <div><label>Website${client.website ? ` <span class="muted">(${ext(client.website, 'open')})</span>` : ''}</label><input type="url" name="website" placeholder="https://example.com" value="${esc(client.website || '')}"></div>
 <div><label>Google Business Profile${client.gbp_url ? ` <span class="muted">(${ext(client.gbp_url, 'open')})</span>` : ''}${client.place_id ? ' <span class="muted">linked</span>' : ''}</label><span class="offfield"><input type="text" name="gbp_url" placeholder="Paste the Google Maps link" value="${esc(client.gbp_url || '')}">${GBP_READS ? '' : `<span class="info" tabindex="0" role="note" aria-label="About this field" title="Saved and kept here for reference. Pulling the name, address, phone and hours out of the profile needs a Google Places API key, which requires Google Cloud billing. Until then, Refresh canonical facts reads the client website instead.">i</span>`}</span></div>
+<div class="fields-previous"><label>Previous addresses and phones <span class="muted">(one per line) Discovery also searches for these, and a listing that still shows one is reported as old info for this business.</span></label><textarea name="previous" placeholder="1304 Holtwood Rd, Holtwood, PA 17532&#10;(717) 501-1712">${esc((() => { const p = getPrevious(client); return [...p.addresses, ...p.phones].join('\n'); })())}</textarea></div>
 <div class="fields-save"><button class="secondary">Save</button>${client.sheet_id ? `<span class="small">${ext(`https://docs.google.com/spreadsheets/d/${client.sheet_id}`, 'Google Sheet')}</span>` : ''}</div>
 </form></div>
 
@@ -957,7 +960,9 @@ async function handle(req, res, body) {
         return bounce(`/client/${client.slug}`, 'error', 'That Google Business Profile link does not look valid', `Received "${gbp}". Open the business in Google Maps and paste the address bar.`);
       }
       const changed = gbp !== (client.gbp_url || '');
-      update('clients', client.id, { website: f.website?.trim() || null, gbp_url: gbp || null, updated_at: now() });
+      const patch = { website: f.website?.trim() || null, gbp_url: gbp || null, updated_at: now() };
+      if (f.previous !== undefined) { const prev = parsePreviousInput(f.previous); patch.previous_json = prev.addresses.length || prev.phones.length ? JSON.stringify(prev) : null; }
+      update('clients', client.id, patch);
       if (changed) { update('clients', client.id, { place_id: null, updated_at: now() }); getDb().prepare('DELETE FROM gbp_profiles WHERE client_id = ?').run(client.id); }
       schedulePersist();
       if (gbp && changed && config.placesKey) {
