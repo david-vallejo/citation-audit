@@ -245,6 +245,19 @@ pre.log.live::after{content:"\\2588"; color:var(--accent); animation:blink 1.1s 
 .tabs a{padding:8px 0 9px; color:var(--muted); text-decoration:none; font-size:13.5px; border-bottom:2px solid transparent; margin-bottom:-1px}
 .tabs a:hover{color:var(--ink)}
 .tabs a.on{color:var(--ink); font-weight:600; border-bottom-color:var(--accent)}
+.tabs .pdf-btn{margin-left:auto; align-self:center}
+.print-only{display:none}
+@media print{
+  @page{size:landscape; margin:12mm}
+  body{background:#fff}
+  header,form,button,.notice,.crumb,.no-print,.tabs a:not(.on){display:none!important}
+  .print-only{display:block}
+  .tabs{border-bottom:none; margin:12px 0 6px}
+  .card{box-shadow:none; border:none; padding:0}
+  table{font-size:10px}
+  tr{break-inside:avoid}
+  a{color:inherit; text-decoration:none}
+}
 
 /* ---- qa row controls ---- */
 .qa form{display:flex; gap:5px; flex-wrap:wrap; align-items:center}
@@ -658,12 +671,12 @@ function runPage(id, filter = 'qa') {
   const skippedNote = skipped.length
     ? `<div class="notice warn"><button class="x" onclick="this.parentNode.remove()" title="Dismiss" aria-label="Dismiss">&times;</button><b>${skipped.length} field${skipped.length > 1 ? 's were' : ' was'} not checked on any profile</b><div class="detail">${esc(skipped.join(', '))} ${skipped.length > 1 ? 'have' : 'has'} no canonical value set, so there was nothing to compare against. Set ${skipped.length > 1 ? 'them' : 'it'} on ${client.name}'s page and run the audit again.</div></div>` : '';
   const qaForm = r => `<div class="qa"><form method="post" action="/finding/${r.id}/qa"><select name="decision"><option value="confirm">Confirm as-is</option><option value="dismiss">Dismiss (not a real issue)</option><option value="correct">Correct status to</option></select><select name="corrected_status"><option value="conflict">conflict</option><option value="consistent">consistent</option><option value="unable_to_verify">unable to verify</option></select><input type="text" name="note" placeholder="note" style="width:140px"><button>Save</button></form>${r.decision ? `<div class="small muted">QA: ${esc(r.decision)}${r.corrected_status ? ` → ${esc(r.corrected_status)}` : ''}${r.qa_note ? ` — ${esc(r.qa_note)}` : ''}</div>` : ''}</div>`;
-  return layout(`Run ${id.slice(0, 8)}`, `${skippedNote}<p class="crumb"><a href="/">Clients</a> / ${link(`/client/${client.slug}`, client.name)} / Audit ${esc(run.started_at.slice(0, 10))}</p><h1>Audit of ${esc(run.started_at.replace('T', ' ').slice(0, 16))} <span class="badge">${esc(run.mode)}</span></h1>
+  return layout(`Run ${id.slice(0, 8)}`, `${skippedNote}<p class="crumb"><a href="/">Clients</a> / ${link(`/client/${client.slug}`, client.name)} / Audit ${esc(run.started_at.slice(0, 10))}</p><p class="print-only"><b>${esc(client.name)}</b> · Citation audit · printed ${esc(now().slice(0, 10))}</p><h1>Audit of ${esc(run.started_at.replace('T', ' ').slice(0, 16))} <span class="badge">${esc(run.mode)}</span></h1>
 ${gbpHtml(client)}
 <h2>Directory listings</h2>
 <div class="card"><div class="grid readout"><div class="stat">${run.citations_total}<small>profiles audited</small></div><div class="stat" style="color:var(--ok)">${run.consistent}<small>consistent</small></div><div class="stat" style="color:var(--bad)">${run.conflicts}<small>with conflicts</small></div><div class="stat" style="color:var(--warn)">${run.unverified}<small>unable to verify</small></div><div class="stat">${open}<small>findings awaiting QA</small></div></div>
-<p class="actions">${run.sheet_url && run.sheet_url.startsWith('http') ? ext(run.sheet_url, 'Open Google Sheet') : ''} <form method="post" action="/run/${id}/report" class="inline"><button ${busy(client.slug) ? 'disabled' : ''}>${files.length ? 'Regenerate report' : 'Generate report'}</button></form> <span class="muted small">Client Action tab = ${conflicts} confirmed conflict(s). Findings still in QA are held back from the client tab.</span></p></div>
-${files.length ? `<h2>Report files</h2><div class="card">${table(['File', 'What it holds', 'Size', ''], files.map(f => [
+<p class="actions no-print">${run.sheet_url && run.sheet_url.startsWith('http') ? ext(run.sheet_url, 'Open Google Sheet') : ''} <form method="post" action="/run/${id}/report" class="inline"><button ${busy(client.slug) ? 'disabled' : ''}>${files.length ? 'Regenerate report' : 'Generate report'}</button></form> <span class="muted small no-print">Client Action tab = ${conflicts} confirmed conflict(s). Findings still in QA are held back from the client tab.</span></p></div>
+${files.length ? `<h2 class="no-print">Report files</h2><div class="card no-print">${table(['File', 'What it holds', 'Size', ''], files.map(f => [
   `<span class="mono">${esc(f.name)}</span>`,
   esc({ 'client-action.csv': 'Confirmed conflicts and the correction to make. This is the tab the client reads.',
         'citation-inventory.csv': 'Every stored profile with its status and coverage.',
@@ -672,8 +685,8 @@ ${files.length ? `<h2>Report files</h2><div class="card">${table(['File', 'What 
   `${(f.bytes / 1024).toFixed(1)} KB`,
   `<a class="btn secondary small" href="/run/${id}/file/${esc(f.name)}">Download</a>`,
 ]))}<p class="muted small" style="margin:10px 0 0">Kept in the database, so they survive a restart and ride the same backup.</p></div>` : ''}
-<p class="tabs">${tab('qa', `QA queue (${open})`)}${tab('action', `Client action (${conflicts})`)}${tab('conflicts', 'All conflicts')}${tab('all', `All findings (${rows.length})`)}</p>
-<div class="card">${table(['Directory / URL', 'Field', 'Status', 'Conf.', 'Canonical', 'Found on profile', 'Reason', filter === 'action' ? 'Suggested correction' : 'QA'], [...(filter === 'action' ? gbpFixes.map(r => [`Google Business Profile<div class="small wrap">${gbp.gbp.facts.maps_url ? ext(gbp.gbp.facts.maps_url, 'Open on Google Maps') : ''}</div><div class="small muted">vs the client website</div>`, fieldLabel(r.field), badge(r.status), String(r.confidence), `<span class="wrap">${esc(r.website)}</span>`, `<span class="wrap">${esc(r.gbp)}</span>`, `<span class="small">${esc(r.reason || '')}</span>`, esc(gbpSuggestion(r))]) : []), ...shown.map(r => [`${esc(r.directory)}<div class="small wrap">${ext(r.url, r.url.replace(/^https?:\/\/(www\.)?/, '').slice(0, 60))}</div><div class="small">${link(`/citation/${r.citation_id}?run=${id}`, 'evidence')} <span class="muted">${esc(r.fetch_method || '')}${r.http_status ? ` ${r.http_status}` : ''}</span></div>`, fieldLabel(r.field), `${badge(r.effective_status)}${r.effective_status !== r.status ? `<div class="small muted">raw: ${esc(r.status)}</div>` : ''}`, String(r.confidence), `<span class="wrap">${esc(r.expected)}</span>`, `<span class="wrap">${esc(r.found)}</span>`, `<span class="small">${esc(r.reason || '')}</span>`, filter === 'action' ? esc(suggestion(r)) : qaForm(r)])])}</div>`);
+<p class="tabs">${tab('qa', `QA queue (${open})`)}${tab('action', `Client action (${conflicts})`)}${tab('conflicts', 'All conflicts')}${tab('all', `All findings (${rows.length})`)}<button type="button" class="secondary small pdf-btn" title="Opens the print dialog. Choose Save as PDF as the destination." data-title="${esc(`${client.name} - Citation Audit - ${({ qa: 'QA queue', action: 'Client action', conflicts: 'All conflicts', all: 'All findings' })[filter] || 'Findings'} - ${run.started_at.slice(0, 10)}`)}" onclick="var t=document.title;document.title=this.dataset.title;window.print();document.title=t">Download PDF</button></p>
+<div class="card">${table(['Directory / URL', 'Field', 'Status', 'Conf.', 'Canonical', 'Found on profile', 'Reason', filter === 'action' ? 'Suggested correction' : 'QA'], [...(filter === 'action' ? gbpFixes.map(r => [`Google Business Profile<div class="small wrap">${gbp.gbp.facts.maps_url ? ext(gbp.gbp.facts.maps_url, 'Open on Google Maps') : ''}</div><div class="small muted">vs the client website</div>`, fieldLabel(r.field), badge(r.status), String(r.confidence), `<span class="wrap">${esc(r.website)}</span>`, `<span class="wrap">${esc(r.gbp)}</span>`, `<span class="small">${esc(r.reason || '')}</span>`, esc(gbpSuggestion(r))]) : []), ...shown.map(r => [`${esc(r.directory)}<div class="small wrap">${ext(r.url, r.url.replace(/^https?:\/\/(www\.)?/, '').slice(0, 60))}</div><div class="small no-print">${link(`/citation/${r.citation_id}?run=${id}`, 'evidence')} <span class="muted">${esc(r.fetch_method || '')}${r.http_status ? ` ${r.http_status}` : ''}</span></div>`, fieldLabel(r.field), `${badge(r.effective_status)}${r.effective_status !== r.status ? `<div class="small muted">raw: ${esc(r.status)}</div>` : ''}`, String(r.confidence), `<span class="wrap">${esc(r.expected)}</span>`, `<span class="wrap">${esc(r.found)}</span>`, `<span class="small">${esc(r.reason || '')}</span>`, filter === 'action' ? esc(suggestion(r)) : qaForm(r)])])}</div>`);
 }
 
 function citationPage(id, runId) {
