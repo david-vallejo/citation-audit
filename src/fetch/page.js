@@ -39,10 +39,15 @@ function htmlToText(html) {
   return { title: title.trim(), description: desc.trim(), text: t };
 }
 
-function looksBlocked(status, body) {
+export function looksBlocked(status, body) {
   if ([401, 403, 405, 429, 503].includes(status)) return true;
-  const head = body.slice(0, 4000).toLowerCase();
-  return body.length < 1500 || /access denied|are you a human|captcha|verify you are|unusual traffic|enable javascript and cookies|attention required|request blocked|px-captcha|just a moment/.test(head);
+  if (body.length < 1500) return true;
+  // Match challenge wording in the visible text, not raw HTML: real profiles (BBB) carry
+  // config strings like RECAPTCHA_SITE_KEY in inline scripts that a raw match flags.
+  const { title, text } = htmlToText(body.slice(0, 200_000));
+  const visible = `${title}\n${text.slice(0, 3000)}`.toLowerCase();
+  if (/access denied|are you a human|verify you are|unusual traffic|enable javascript and cookies|attention required|request blocked|just a moment|complete the captcha|solve the captcha|captcha to continue/.test(visible)) return true;
+  return /px-captcha|captcha-delivery\.com|cf-chl-opt/.test(body.slice(0, 20_000).toLowerCase());
 }
 
 function fromHtml(html, status, method, finalUrl, extra = {}) {
