@@ -126,16 +126,18 @@ export function matchesPreviousAddress(previous, cited) {
   if (!x || !(x.street || x.city)) return false;
   const xs = N.splitStreet(x.street).base;
   return (previous?.addresses || []).some(prev => {
-    const p = N.parseAddress(prev);
+    let p = N.parseAddress(prev);
     if (!p) return false;
+    if (!p.city && p.street && !/\d/.test(p.street)) p = { ...p, city: p.street, street: '' };
     const ps = N.splitStreet(p.street).base;
     if (ps && xs && (ps === xs || N.similarity(ps, xs) >= 0.85)) return true;
     return !!p.city && !!x.city && N.clean(p.city) === N.clean(x.city) && (!N.normZip(p.zip) || !N.normZip(x.zip) || N.normZip(p.zip) === N.normZip(x.zip)) && !xs;
   });
 }
 export const OLD_INFO_PREFIX = 'Still shows the previous';
+export const OTHER_LOCATION_PREFIX = 'Matches another location';
 
-export function classify(canonical, extracted, { extractionConfidence = 1, phase2 = false, previous = null } = {}) {
+export function classify(canonical, extracted, { extractionConfidence = 1, phase2 = false, previous = null, locations = null } = {}) {
   const fields = phase2 ? [...AUDIT_FIELDS, ...PHASE2_FIELDS] : AUDIT_FIELDS;
   const out = [];
   for (const field of fields) {
@@ -144,6 +146,12 @@ export function classify(canonical, extracted, { extractionConfidence = 1, phase
     const f = COMPARATORS[field](canon, extracted?.[field]);
     f.confidence = Math.round(Math.min(f.confidence, Math.max(extractionConfidence, 0.3)) * 100) / 100;
     if (f.status !== UNVERIFIED && f.confidence < config.qaThreshold) f.needs_qa = 1;
+    if (f.status === CONFLICT && locations && ((field === 'phone' && matchesPreviousPhone(locations, extracted?.phone)) || (field === 'address' && matchesPreviousAddress(locations, extracted?.address)))) {
+      f.status = CONSISTENT;
+      f.reason = `${OTHER_LOCATION_PREFIX} of this business (${f.found})`;
+      f.confidence = 0.95;
+      f.needs_qa = 0;
+    }
     if (f.status === CONFLICT && previous && ((field === 'phone' && matchesPreviousPhone(previous, extracted?.phone)) || (field === 'address' && matchesPreviousAddress(previous, extracted?.address)))) {
       f.reason = `${OLD_INFO_PREFIX} ${field} (outdated listing for this business)`;
       f.confidence = 0.95;

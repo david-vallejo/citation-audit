@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS clients (
   place_id    TEXT,
   gbp_url     VARCHAR(700),
   previous_json TEXT,
+  locations_json TEXT,
   sheet_id    TEXT,
   created_at  VARCHAR(32) NOT NULL,
   updated_at  VARCHAR(32) NOT NULL

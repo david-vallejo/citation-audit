@@ -3,7 +3,7 @@
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
 import { config, AUDIT_FIELDS, PHASE2_FIELDS } from './config.js';
-import { all, get, insert, update, uuid, now, getClient, getCanonical, setCanonical, getDb, transaction, getPrevious, parsePreviousInput } from './db.js';
+import { all, get, insert, update, uuid, now, getClient, getCanonical, setCanonical, getDb, transaction, getPrevious, getLocations, parsePreviousInput } from './db.js';
 import { refreshCanonical, runAudit, effectiveFindings, latestRun, suggestion, displayCanonical, gbpCheck, gbpSuggestion } from './audit.js';
 import { discover, addCitation, inventory } from './discovery/index.js';
 import { classifyUrl } from './discovery/directories.js';
@@ -643,6 +643,7 @@ ${verdict}
 <div><label>Website${client.website ? ` <span class="muted">(${ext(client.website, 'open')})</span>` : ''}</label><input type="url" name="website" placeholder="https://example.com" value="${esc(client.website || '')}"></div>
 <div><label>Google Business Profile${client.gbp_url ? ` <span class="muted">(${ext(client.gbp_url, 'open')})</span>` : ''}${client.place_id ? ' <span class="muted">linked</span>' : ''}</label><span class="offfield"><input type="text" name="gbp_url" placeholder="Paste the Google Maps link" value="${esc(client.gbp_url || '')}">${GBP_READS ? '' : `<span class="info" tabindex="0" role="note" aria-label="About this field" title="Saved and kept here for reference. Pulling the name, address, phone and hours out of the profile needs a Google Places API key, which requires Google Cloud billing. Until then, Refresh canonical facts reads the client website instead.">i</span>`}</span></div>
 <div class="fields-previous"><label>Previous addresses and phones <span class="muted">(one per line) Discovery also searches for these, and a listing that still shows one is reported as old info for this business.</span></label><textarea name="previous" placeholder="1304 Holtwood Rd, Holtwood, PA 17532&#10;(717) 501-1712">${esc((() => { const p = getPrevious(client); return [...p.addresses, ...p.phones].join('\n'); })())}</textarea></div>
+<div class="fields-previous"><label>Other current locations <span class="muted">(one per line) A second office or service-area profile. Discovery also searches for these, and a listing that shows one counts as correct.</span></label><textarea name="locations" placeholder="Shawnee, KS&#10;(913) 555-0100">${esc((() => { const p = getLocations(client); return [...p.addresses, ...p.phones].join('\n'); })())}</textarea></div>
 <div class="fields-save"><button class="secondary">Save</button>${client.sheet_id ? `<span class="small">${ext(`https://docs.google.com/spreadsheets/d/${client.sheet_id}`, 'Google Sheet')}</span>` : ''}</div>
 </form></div>
 
@@ -994,6 +995,7 @@ async function handle(req, res, body) {
       const changed = gbp !== (client.gbp_url || '');
       const patch = { website: f.website?.trim() || null, gbp_url: gbp || null, updated_at: now() };
       if (f.previous !== undefined) { const prev = parsePreviousInput(f.previous); patch.previous_json = prev.addresses.length || prev.phones.length ? JSON.stringify(prev) : null; }
+      if (f.locations !== undefined) { const loc = parsePreviousInput(f.locations); patch.locations_json = loc.addresses.length || loc.phones.length ? JSON.stringify(loc) : null; }
       update('clients', client.id, patch);
       if (changed) { update('clients', client.id, { place_id: null, updated_at: now() }); getDb().prepare('DELETE FROM gbp_profiles WHERE client_id = ?').run(client.id); }
       schedulePersist();

@@ -1,5 +1,5 @@
 import { config } from './config.js';
-import { all, get, insert, update, uuid, now, getCanonical, setCanonical, saveGbpProfile, saveWebsiteFacts, getGbpProfile, getWebsiteFacts, getPrevious } from './db.js';
+import { all, get, insert, update, uuid, now, getCanonical, setCanonical, saveGbpProfile, saveWebsiteFacts, getGbpProfile, getWebsiteFacts, getPrevious, getLocations } from './db.js';
 import { compareGbpToWebsite } from './compare/gbp.js';
 import { placeDetails, searchPlaces, resolvePlaceInput } from './canonical/places.js';
 import { scrapeWebsite } from './canonical/website.js';
@@ -11,7 +11,7 @@ import { normPhone, fmtPhone } from './compare/normalize.js';
 
 function targetOf(client, canonical) {
   const addr = canonical.address?.value;
-  return { name: canonical.name?.value || client.name, city: typeof addr === 'object' ? addr?.city : '', phone: canonical.phone?.value ? fmtPhone(canonical.phone.value) : '', previous: getPrevious(client) };
+  return { name: canonical.name?.value || client.name, city: typeof addr === 'object' ? addr?.city : '', phone: canonical.phone?.value ? fmtPhone(canonical.phone.value) : '', previous: getPrevious(client), locations: getLocations(client) };
 }
 
 export async function refreshCanonical(client, { log = console.log, lookup = null, skipWebsite = false } = {}) {
@@ -86,11 +86,12 @@ async function auditOne(run, client, canonical, target, citation, log) {
     if (!findings) {
       const { data } = await extractListing(source, citation.url, target);
       snapshot.extracted_json = JSON.stringify(data); snapshot.extraction_confidence = data.confidence;
-      const oldInfo = matchesPreviousPhone(target.previous, data.phone) || matchesPreviousAddress(target.previous, data.address);
+      const oldInfo = matchesPreviousPhone(target.previous, data.phone) || matchesPreviousAddress(target.previous, data.address)
+        || matchesPreviousPhone(target.locations, data.phone) || matchesPreviousAddress(target.locations, data.address);
       if (!data.is_profile_page && data.confidence < 0.5 && !oldInfo) {
         findings = unverifiedAll(`Page is not a single-business profile (${data.notes || 'no matching listing found'})`, canonical);
       } else {
-        findings = classify(canonical, data, { extractionConfidence: Math.min(oldInfo ? Math.max(data.confidence, 0.85) : data.confidence, cap), previous: target.previous });
+        findings = classify(canonical, data, { extractionConfidence: Math.min(oldInfo ? Math.max(data.confidence, 0.85) : data.confidence, cap), previous: target.previous, locations: target.locations });
         const nameF = findings.find(f => f.field === 'name');
         if (!oldInfo && nameF?.status === CONFLICT && nameF.confidence < 0.6) for (const f of findings) if (f.status !== UNVERIFIED) f.needs_qa = 1;
         if (!oldInfo && data.confidence < 0.5) for (const f of findings) if (f.status !== UNVERIFIED) f.needs_qa = 1;

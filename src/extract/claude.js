@@ -127,11 +127,17 @@ function previousNote(previous) {
   return ` This business previously used: ${parts.join('; ')}. A listing that shows one of these previous details IS the target business with outdated information: treat it as the target (is_profile_page=true when it is a single listing) and report the values exactly as shown.`;
 }
 
+function locationsNote(locations) {
+  const parts = [...(locations?.addresses || []).map(a => `address ${a}`), ...(locations?.phones || []).map(p => `phone ${p}`)];
+  if (!parts.length) return '';
+  return ` This business also has other current locations: ${parts.join('; ')}. A listing for one of these locations IS the target business: treat it as the target (is_profile_page=true when it is a single listing) and report the values exactly as shown.`;
+}
+
 export async function extractListing(page, url, target, { isOwnSite = false } = {}) {
   assertBudget();
   const targetDesc = isOwnSite
     ? `This is the business's OWN website. Extract its facts, focusing on year founded, services offered, phone, address, hours and email.`
-    : `TARGET BUSINESS: ${target.name}${target.city ? `, ${target.city}` : ''}${target.phone ? ` (phone ${target.phone})` : ''}. The listing may use a slightly different spelling; use address/phone to confirm identity.${previousNote(target.previous)}`;
+    : `TARGET BUSINESS: ${target.name}${target.city ? `, ${target.city}` : ''}${target.phone ? ` (phone ${target.phone})` : ''}. The listing may use a slightly different spelling; use address/phone to confirm identity.${previousNote(target.previous)}${locationsNote(target.locations)}`;
   const model = config.model;
   const supportsEffort = !/haiku-4-5|sonnet-4-5|opus-4-5/.test(model);
   const useFallbacks = /opus-5|fable/.test(model);

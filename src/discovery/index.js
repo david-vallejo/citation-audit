@@ -1,5 +1,5 @@
 import { config } from '../config.js';
-import { all, get, insert, uuid, now, getPrevious } from '../db.js';
+import { all, get, insert, uuid, now, getPrevious, getLocations } from '../db.js';
 import { normalizeUrl, normUrlHost, normPhone, parseAddress } from '../compare/normalize.js';
 import { classifyUrl, PRIORITY_KEYS, PRIORITY_SITES } from './directories.js';
 import * as ddg from './providers/ddg.js';
@@ -13,6 +13,7 @@ const phoneQuery = p => `"${p.slice(0, 3)}-${p.slice(3, 6)}-${p.slice(6)}" OR "(
 
 // Outdated listings only show the old details, so a search for the current address and
 // phone never finds them. Search the previous ones explicitly, directory by directory.
+// Other current locations are searched the same way.
 function previousQueries(name, previous) {
   const q = [];
   for (const raw of previous.phones) { const p = normPhone(raw); if (p) q.push(phoneQuery(p)); }
@@ -39,6 +40,7 @@ export function buildQueries(canonical, client) {
   q.push(`"${name}" ${loc} reviews`.trim());
   for (const k of PRIORITY_KEYS.slice(0, config.discoverySiteQueries)) q.push(`"${name}" ${city || ''} site:${PRIORITY_SITES[k]}`.replace(/\s+/g, ' '));
   for (const extra of previousQueries(name, getPrevious(client))) if (!q.includes(extra)) q.push(extra);
+  for (const extra of previousQueries(name, getLocations(client))) if (!q.includes(extra)) q.push(extra);
   return q;
 }
 

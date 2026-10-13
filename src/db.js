@@ -22,6 +22,7 @@ const ADDED_COLUMNS = [
   ['clients', 'gbp_url', 'VARCHAR(700)'],
   ['citations', 'search_snippet', 'TEXT'],
   ['clients', 'previous_json', 'TEXT'],
+  ['clients', 'locations_json', 'TEXT'],
 ];
 function migrate(d) {
   for (const [table, column, type] of ADDED_COLUMNS) {
@@ -67,6 +68,14 @@ export function getClient(slug) {
 export function getPrevious(client) {
   let p = {};
   try { p = JSON.parse(client?.previous_json || '{}') || {}; } catch { p = {}; }
+  return { addresses: Array.isArray(p.addresses) ? p.addresses.filter(Boolean) : [], phones: Array.isArray(p.phones) ? p.phones.filter(Boolean) : [] };
+}
+
+// Other current locations of the same business (a second office, a service-area profile).
+// A listing that shows one of these is correct, not a mismatch.
+export function getLocations(client) {
+  let p = {};
+  try { p = JSON.parse(client?.locations_json || '{}') || {}; } catch { p = {}; }
   return { addresses: Array.isArray(p.addresses) ? p.addresses.filter(Boolean) : [], phones: Array.isArray(p.phones) ? p.phones.filter(Boolean) : [] };
 }
 
