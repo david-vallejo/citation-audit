@@ -5,7 +5,8 @@ import { config } from '../config.js';
 import { get, all, update, now, uuid, getDb } from '../db.js';
 import { effectiveFindings, suggestion, gbpCheck, gbpSuggestion } from '../audit.js';
 
-const TABS = ['Client Action', 'Citation Inventory', 'Internal QA'];
+const TABS = ['Client Action', 'Citation Inventory', 'Web Mentions', 'Internal QA'];
+const NOT_A_PROFILE = 'Page is not a single-business profile';
 const label = s => ({ consistent: 'Consistent', conflict: 'Conflict', needs_review: 'Needs Review', unable_to_verify: 'Unable to Verify', dismissed: 'Dismissed (QA)' }[s] || s);
 const fieldLabel = f => ({ name: 'Business Name', address: 'Address', phone: 'Phone', website: 'Website', hours: 'Hours', year_founded: 'Year Founded', services: 'Services', categories: 'Categories', email: 'Email' }[f] || f);
 
@@ -19,13 +20,28 @@ function buildTabs(run, client) {
   const gbp = gbpCheck(client);
   const GBP_DIR = 'Google Business Profile (vs website)';
   for (const r of gbp?.rows || []) if (r.status === 'conflict' && !r.needs_qa) action.push([GBP_DIR, gbp.gbp.facts.maps_url || '', fieldLabel(r.field), r.gbp, r.website, gbpSuggestion(r)]);
-  for (const r of rows) if (r.effective_status === 'conflict' && !r.qa_open) action.push([r.directory, r.url, fieldLabel(r.field), r.found, r.expected, suggestion(r)]);
+  // A directory listing fewer services than the website is normal, not something to correct.
+  const LISTING_FIELDS = r => !['services', 'categories'].includes(r.field);
+  for (const r of rows) if (r.effective_status === 'conflict' && !r.qa_open && LISTING_FIELDS(r)) action.push([r.directory, r.url, fieldLabel(r.field), r.found, r.expected, suggestion(r)]);
+
+  // Pages Google found that name the business but are not listings (press, partner pages,
+  // sponsorships). Nothing on them to correct, so they get their own tab instead of
+  // padding the inventory with "Unable to Verify" rows.
+  const mentions = [['Site', 'Page URL', 'What It Is', 'Found By']];
+  const isMention = fs => fs.every(f => f.effective_status === 'unable_to_verify' && (f.reason || '').startsWith(NOT_A_PROFILE));
+  for (const [id, fs] of byCitation) {
+    if (!isMention(fs)) continue;
+    const snippet = get('SELECT search_snippet FROM citations WHERE id = ?', [id])?.search_snippet || '';
+    const what = (fs[0].reason || '').slice(NOT_A_PROFILE.length).replace(/^\s*\(|\)\s*$/g, '').split(/(?<=\.)\s/)[0];
+    mentions.push([fs[0].directory, fs[0].url, what || snippet.slice(0, 200), fs[0].discovered_via]);
+  }
 
   const inv = [['Directory', 'Profile URL', 'Status', 'Conflicting Fields', 'Pending Review', 'Last Checked', 'Discovered Via', 'Discovered On']];
   for (const [, fs] of byCitation) {
+    if (isMention(fs)) continue;
     const c = fs[0];
-    const conflicts = fs.filter(f => f.effective_status === 'conflict' && !f.qa_open).map(f => fieldLabel(f.field));
-    const pendingConflicts = fs.filter(f => f.effective_status === 'conflict' && f.qa_open).map(f => fieldLabel(f.field));
+    const conflicts = fs.filter(f => f.effective_status === 'conflict' && !f.qa_open && LISTING_FIELDS(f)).map(f => fieldLabel(f.field));
+    const pendingConflicts = fs.filter(f => f.effective_status === 'conflict' && f.qa_open && LISTING_FIELDS(f)).map(f => fieldLabel(f.field));
     const pending = fs.filter(f => f.qa_open).length;
     // A profile with unreviewed conflicts is not "Consistent". Saying so in a
     // client-facing tab understates the problem and undermines the whole report.
@@ -49,7 +65,7 @@ function buildTabs(run, client) {
     ...(otherLoc.size ? [`Listings for another location: ${otherLoc.size}`] : []),
     gbp ? `Google Business Profile vs website: ${gbp.rows.filter(r => r.status === 'conflict').length} mismatch(es), profile read ${gbp.gbp.fetched_at.slice(0, 10)}` : 'Google Business Profile not checked (no profile linked, or the Places API key is not set)',
     ...(skipped.length ? [`Not checked anywhere because no canonical value is set: ${skipped.join(', ')}. Set them on the client page and re-run.`] : [])];
-  return { tabs: { [TABS[0]]: action, [TABS[1]]: inv, [TABS[2]]: qa }, meta, skipped };
+  return { tabs: { [TABS[0]]: action, [TABS[1]]: inv, [TABS[2]]: mentions, [TABS[3]]: qa }, meta, skipped };
 }
 
 // ---- Google auth (service account, no googleapis dependency) ----

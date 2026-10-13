@@ -76,9 +76,24 @@ export function normUrlHost(u) {
   } catch { return clean(u).replace(/\s/g, ''); }
 }
 
+// Search results sometimes link a profile through a login wall or bot gate
+// (facebook.com/login/?next=…, showmelocal.com/norobots.aspx?src=…). Use the page behind it.
+export function unwrapUrl(u) {
+  try {
+    const url = new URL(String(u).trim());
+    for (const k of ['next', 'src', 'redirect', 'continue']) {
+      const v = url.searchParams.get(k);
+      if (!v) continue;
+      const inner = new URL(v, url.origin);
+      if (inner.hostname.replace(/^www\./, '') === url.hostname.replace(/^www\./, '') && inner.pathname !== '/') return inner.toString();
+    }
+    return url.toString();
+  } catch { return String(u).trim(); }
+}
+
 export function normalizeUrl(u) {
   try {
-    const url = new URL(u.trim());
+    const url = new URL(unwrapUrl(u));
     url.hash = '';
     url.hostname = url.hostname.toLowerCase().replace(/^www\./, '');
     for (const k of [...url.searchParams.keys()]) if (/^(utm_|fbclid|gclid|ref|source|_ga)/i.test(k)) url.searchParams.delete(k);

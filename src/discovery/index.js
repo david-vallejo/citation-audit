@@ -1,6 +1,6 @@
 import { config } from '../config.js';
 import { all, get, insert, uuid, now, getPrevious, getLocations } from '../db.js';
-import { normalizeUrl, normUrlHost, normPhone, parseAddress } from '../compare/normalize.js';
+import { normalizeUrl, unwrapUrl, normUrlHost, normPhone, parseAddress } from '../compare/normalize.js';
 import { classifyUrl, PRIORITY_KEYS, PRIORITY_SITES } from './directories.js';
 import * as ddg from './providers/ddg.js';
 import * as cse from './providers/google-cse.js';
@@ -32,6 +32,39 @@ function previousQueries(name, previous) {
 // name alone, so listings filed under another town or a service area still turn up.
 export const SWEEP_SITES = ['chamberofcommerce.com', 'merchantcircle.com', 'hotfrog.com', 'foursquare.com', 'alignable.com', 'dexknows.com', 'showmelocal.com', 'cylex.us.com', 'brownbook.net', 'ezlocal.com', 'citysquares.com', 'bizapedia.com', 'dnb.com', 'birdeye.com', 'instagram.com', 'youtube.com', 'linkedin.com', 'nicelocal.com', 'yellowbook.com', 'expertise.com'];
 
+// "Empire Netting & Fence" is also listed as "Empire Fence & Netting" and "Empire Netting and Fence".
+export function nameVariants(name) {
+  const out = new Set([name]);
+  const m = name.match(/^(\S+(?:\s+\S+)*?)\s+(\S+)\s+(?:&|and)\s+(\S+)$/i);
+  if (m) {
+    out.add(`${m[1]} ${m[3]} & ${m[2]}`);
+    out.add(`${m[1]} ${m[2]} and ${m[3]}`);
+    out.add(`${m[1]} ${m[3]} and ${m[2]}`);
+  }
+  return [...out];
+}
+
+// Plain Google searches, the way a person would look for the business: every spelling of the
+// name, the phone in each common format, the street address, and each location's town.
+// These find the listings and mentions that no directory-by-directory query thinks to ask for.
+export function webQueries(canonical, client) {
+  const name = canonical.name?.value || client.name;
+  const addr = canonical.address?.value;
+  const a = typeof addr === 'object' ? addr : parseAddress(addr || '');
+  const phone = canonical.phone?.value ? normPhone(canonical.phone.value) : null;
+  const own = normUrlHost(client.website || canonical.website?.value);
+  const q = nameVariants(name).map(v => `"${v}"${own ? ` -site:${own}` : ''}`);
+  if (phone) q.push(`"${phone.slice(0, 3)}-${phone.slice(3, 6)}-${phone.slice(6)}"`, `"(${phone.slice(0, 3)}) ${phone.slice(3, 6)}-${phone.slice(6)}"`, `"${phone.slice(0, 3)}.${phone.slice(3, 6)}.${phone.slice(6)}"`);
+  if (a?.street) q.push(`"${a.street}" ${a.city || ''}`.trim());
+  const first = name.split(/\s+/).slice(0, 2).join(' ');
+  for (const loc of [a, ...getLocations(client).addresses.map(parseAddress)]) {
+    if (!loc) continue;
+    const town = [loc.city || (!/\d/.test(loc.street || '') ? loc.street : ''), loc.state].filter(Boolean).join(' ');
+    if (town) q.push(`"${first}" ${town}`, `"${name}" ${town} reviews`);
+  }
+  return q;
+}
+
 export function buildQueries(canonical, client, { full = false } = {}) {
   const name = canonical.name?.value || client.name;
   const addr = canonical.address?.value;
@@ -43,7 +76,9 @@ export function buildQueries(canonical, client, { full = false } = {}) {
   if (phone) q.push(phoneQuery(phone));
   q.push(`"${name}" ${loc} reviews`.trim());
   for (const k of PRIORITY_KEYS.slice(0, config.discoverySiteQueries)) q.push(`"${name}" ${city || ''} site:${PRIORITY_SITES[k]}`.replace(/\s+/g, ' '));
-  if (full) for (const site of [...PRIORITY_KEYS.map(k => PRIORITY_SITES[k]), ...SWEEP_SITES]) q.push(`"${name}" site:${site}`);
+  for (const extra of webQueries(canonical, client)) q.push(extra);
+  const anyName = nameVariants(name).map(v => `"${v}"`).join(' OR ');
+  if (full) for (const site of [...PRIORITY_KEYS.map(k => PRIORITY_SITES[k]), ...SWEEP_SITES]) q.push(`${anyName} site:${site}`);
   for (const extra of previousQueries(name, getPrevious(client))) if (!q.includes(extra)) q.push(extra);
   for (const extra of previousQueries(name, getLocations(client))) if (!q.includes(extra)) q.push(extra);
   return q;
@@ -95,22 +130,29 @@ export async function discover(client, canonical, { provider = config.discoveryP
     return strong.includes(namePhrase);
   };
   const queries = [...new Set(buildQueries(canonical, client, { full }))].slice(0, maxQueries);
-  let added = 0, seen = 0;
+  let added = 0, seen = 0, failedInARow = 0, skipped = 0;
+  // One bad response must not end the sweep. Retry a query that failed for a passing reason,
+  // skip it if it keeps failing, and only give up on a provider after several queries in a row fail.
+  const passing = e => /\b(429|5\d\d)\b|timeout|timed out|fetch failed|ECONNRESET/i.test(e.message);
   for (const query of queries) {
     let results = null, provider = current();
-    while (results === null) {
-      try { results = await PROVIDERS[provider].search(query); }
+    for (let attempt = 0; results === null; attempt++) {
+      try { results = await PROVIDERS[provider].search(query); failedInARow = 0; }
       catch (e) {
-        log(`  ! ${provider}: ${e.message}`);
+        log(`  ! ${provider}: ${e.message.slice(0, 160)}`);
         insert('discovery_log', { id: uuid(), client_id: client.id, provider, query, results_count: 0, new_citations: 0, ran_at: now() });
-        if (idx + 1 < chain.length) { idx++; provider = current(); log(`  → failing over to ${provider}`); continue; }
-        results = false;
+        if (passing(e) && attempt < 2) { await new Promise(r => setTimeout(r, 3000 * (attempt + 1))); continue; }
+        if (++failedInARow < 3) { results = false; break; }
+        if (idx + 1 < chain.length) { idx++; provider = current(); failedInARow = 0; attempt = -1; log(`  → failing over to ${provider}`); continue; }
+        results = 'stop';
       }
     }
-    if (results === false) { log('  all discovery providers failed; stopping (inventory so far is kept)'); break; }
+    if (results === 'stop') { log('  all discovery providers failed; stopping (inventory so far is kept)'); break; }
+    if (results === false) { skipped++; log(`  skipped after repeated errors: ${query}`); continue; }
     let newHere = 0;
     for (const r of results) {
       seen++;
+      r.url = unwrapUrl(r.url);
       const c = classifyUrl(r.url, clientHost);
       if (!c || c.kind === 'own-site' || c.kind === 'noise' || c.kind === 'directory-nonprofile') continue;
       if (!matchesBusiness(r)) { log(`  · not this business: ${r.url}`); continue; }
@@ -121,7 +163,8 @@ export async function discover(client, canonical, { provider = config.discoveryP
     insert('discovery_log', { id: uuid(), client_id: client.id, provider, query, results_count: results.length, new_citations: newHere, ran_at: now() });
     log(`  ${query}  →  ${results.length} results, ${newHere} new`);
   }
-  return { queries: queries.length, seen, added, provider: current() };
+  if (skipped) log(`  ${skipped} search(es) skipped after repeated errors`);
+  return { queries: queries.length, seen, added, skipped, provider: current() };
 }
 
 export function inventory(clientId) {
