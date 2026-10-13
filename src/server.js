@@ -637,7 +637,7 @@ ${verdict}
 <div class="card"><div class="actions">
 <form method="post" action="/client/${slug}/canonical/refresh" class="inline"><button ${dis} class="secondary">Refresh canonical facts</button></form>
 <form method="post" action="/client/${slug}/discover" class="inline"><button ${dis} class="secondary">Discover profiles</button></form>
-<form method="post" action="/client/${slug}/audit" class="inline"><button ${dis}>Run audit${active ? ` (${active} stored profiles)` : ' (will discover first)'}</button> <label class="inline small" style="display:inline"><input type="checkbox" name="rediscover" value="1"> also re-discover</label> <input type="number" name="limit" placeholder="limit" style="width:70px"></form>
+<form method="post" action="/client/${slug}/audit" class="inline"><button ${dis}>Run audit${active ? ` (${active} stored profiles)` : ' (will discover first)'}</button> <label class="inline small" style="display:inline"><input type="checkbox" name="rediscover" value="1"> also re-discover</label> <label class="inline small" style="display:inline" title="Searches every directory by name, not just the top few. Uses about 40 more searches."><input type="checkbox" name="full" value="1"> full sweep</label> <input type="number" name="limit" placeholder="limit" style="width:70px"></form>
 </div>
 <form method="post" action="/client/${slug}/set" class="fields">
 <div><label>Website${client.website ? ` <span class="muted">(${ext(client.website, 'open')})</span>` : ''}</label><input type="url" name="website" placeholder="https://example.com" value="${esc(client.website || '')}"></div>
@@ -1054,7 +1054,7 @@ async function handle(req, res, body) {
       if (!config.anthropicKey) return bounce(`/client/${client.slug}`, 'error', 'Claude API key is not set', 'Auditing reads each profile with Claude. Add ANTHROPIC_API_KEY in your host\u2019s environment settings, then run the setup check.');
       const u = usageToday();
       if (u.calls >= u.calls_limit || u.cost >= u.cost_limit) return bounce(`/client/${client.slug}`, 'error', 'Daily Claude limit already reached', `Used ${u.calls} of ${u.calls_limit} calls and $${u.cost.toFixed(3)} of $${u.cost_limit.toFixed(2)}. Raise DAILY_CLAUDE_CALLS or DAILY_COST_LIMIT_USD in your host\u2019s environment settings, or wait for the reset at midnight UTC.`);
-      const j = startJob('audit', client.slug, log => runAudit(client, { log, rediscover: f.rediscover === '1', limit }));
+      const j = startJob('audit', client.slug, log => runAudit(client, { log, rediscover: f.rediscover === '1' || f.full === '1', full: f.full === '1', limit }));
       return redirect(`/client/${client.slug}?watching=${j.id}`);
     }
     if ((mm = p.match(/^\/client\/([\w-]+)\/citation\/add$/))) {

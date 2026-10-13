@@ -28,7 +28,11 @@ function previousQueries(name, previous) {
   return q;
 }
 
-export function buildQueries(canonical, client) {
+// A full sweep searches every priority directory plus the long tail of smaller ones, by
+// name alone, so listings filed under another town or a service area still turn up.
+export const SWEEP_SITES = ['chamberofcommerce.com', 'merchantcircle.com', 'hotfrog.com', 'foursquare.com', 'alignable.com', 'dexknows.com', 'showmelocal.com', 'cylex.us.com', 'brownbook.net', 'ezlocal.com', 'citysquares.com', 'bizapedia.com', 'dnb.com', 'birdeye.com', 'instagram.com', 'youtube.com', 'linkedin.com', 'nicelocal.com', 'yellowbook.com', 'expertise.com'];
+
+export function buildQueries(canonical, client, { full = false } = {}) {
   const name = canonical.name?.value || client.name;
   const addr = canonical.address?.value;
   const city = typeof addr === 'object' ? addr?.city : (addr || '').split(',').slice(-2, -1)[0]?.trim();
@@ -39,6 +43,7 @@ export function buildQueries(canonical, client) {
   if (phone) q.push(phoneQuery(phone));
   q.push(`"${name}" ${loc} reviews`.trim());
   for (const k of PRIORITY_KEYS.slice(0, config.discoverySiteQueries)) q.push(`"${name}" ${city || ''} site:${PRIORITY_SITES[k]}`.replace(/\s+/g, ' '));
+  if (full) for (const site of [...PRIORITY_KEYS.map(k => PRIORITY_SITES[k]), ...SWEEP_SITES]) q.push(`"${name}" site:${site}`);
   for (const extra of previousQueries(name, getPrevious(client))) if (!q.includes(extra)) q.push(extra);
   for (const extra of previousQueries(name, getLocations(client))) if (!q.includes(extra)) q.push(extra);
   return q;
@@ -53,7 +58,7 @@ export function addCitation(clientId, url, directory, via, extra = {}) {
 }
 
 // provider may be a comma-separated failover chain, e.g. "google-cse,ddg": when one provider errors, the next takes over.
-export async function discover(client, canonical, { provider = config.discoveryProvider, log = console.log, maxQueries = Infinity } = {}) {
+export async function discover(client, canonical, { provider = config.discoveryProvider, log = console.log, maxQueries = Infinity, full = false } = {}) {
   let chain = String(provider).split(',').map(s => s.trim()).filter(Boolean);
   // When the ScraperAPI key is present, real Google results are available without any
   // Google Cloud setup. Put that first unless the chain names it already, so an older
@@ -89,7 +94,7 @@ export async function discover(client, canonical, { provider = config.discoveryP
     if (distinctive.length) return distinctive.some(t => strong.includes(t));
     return strong.includes(namePhrase);
   };
-  const queries = buildQueries(canonical, client).slice(0, maxQueries);
+  const queries = [...new Set(buildQueries(canonical, client, { full }))].slice(0, maxQueries);
   let added = 0, seen = 0;
   for (const query of queries) {
     let results = null, provider = current();

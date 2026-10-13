@@ -111,7 +111,7 @@ async function auditOne(run, client, canonical, target, citation, log) {
   return result;
 }
 
-export async function runAudit(client, { rediscover = false, limit = Infinity, provider, log = console.log, dryRun = false } = {}) {
+export async function runAudit(client, { rediscover = false, full = false, limit = Infinity, provider, log = console.log, dryRun = false } = {}) {
   const canonical = getCanonical(client.id);
   if (!canonical.name || !canonical.phone) throw new Error(`Canonical facts incomplete for ${client.slug}; run: node src/cli.js canonical ${client.slug}`);
   const target = targetOf(client, canonical);
@@ -120,7 +120,7 @@ export async function runAudit(client, { rediscover = false, limit = Infinity, p
   if (rediscover || !active().length) {
     mode = rediscover ? 'rediscover' : 'initial-discovery';
     log(`${mode === 'rediscover' ? 'Re-discovery requested' : 'No inventory yet'} — running discovery (${provider || config.discoveryProvider})…`);
-    const d = await discover(client, canonical, { provider, log });
+    const d = await discover(client, canonical, { provider, log, full });
     log(`  discovery: ${d.queries} queries, ${d.seen} results, ${d.added} new citations`);
   } else {
     log(`Inventory has ${active().length} known profiles — re-auditing stored URLs (no web discovery).`);

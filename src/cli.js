@@ -27,7 +27,7 @@ citation-audit — commands
   canonical set <slug> <field> "<value>"         (manual override; sticky)
   discover <slug> [--provider ddg|google-cse|serpapi]
   citations <slug> [add <url>] [set <url> active|ignored|not_client|dead]
-  audit <slug> [--rediscover] [--limit N] [--provider …] [--dry-run]
+  audit <slug> [--rediscover] [--full] [--limit N] [--provider …] [--dry-run]
   findings <run-id|slug> [--qa|--conflicts]
   qa <finding-id> confirm|dismiss|correct [--status conflict|consistent|unable_to_verify] [--note "…"]
   report <slug|run-id>
@@ -81,7 +81,7 @@ try {
     }
     case 'audit': {
       const client = getClient(rest[0]);
-      const r = await runAudit(client, { log, rediscover: Boolean(flags.rediscover), limit: flags.limit ? parseInt(flags.limit, 10) : Infinity, provider: flags.provider, dryRun: Boolean(flags['dry-run']) });
+      const r = await runAudit(client, { log, rediscover: Boolean(flags.rediscover || flags.full), full: Boolean(flags.full), limit: flags.limit ? parseInt(flags.limit, 10) : Infinity, provider: flags.provider, dryRun: Boolean(flags['dry-run']) });
       if (flags['dry-run']) { log(`mode=${r.mode}; would audit ${r.citations.length} citations`); break; }
       log(`run id: ${r.id}`);
       break;
