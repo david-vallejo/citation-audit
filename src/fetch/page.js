@@ -46,7 +46,7 @@ export function looksBlocked(status, body) {
   // config strings like RECAPTCHA_SITE_KEY in inline scripts that a raw match flags.
   const { title, text } = htmlToText(body.slice(0, 200_000));
   const visible = `${title}\n${text.slice(0, 3000)}`.toLowerCase();
-  if (/access denied|are you a human|verify you are|unusual traffic|enable javascript and cookies|attention required|request blocked|just a moment|complete the captcha|solve the captcha|captcha to continue/.test(visible)) return true;
+  if (/access denied|are you a human|verify you are|unusual traffic|enable javascript and cookies|attention required|request blocked|just a moment|complete the captcha|solve the captcha|captcha to continue|client challenge|security verification|checking your browser|complete this quick check|request could not be satisfied|sorry, something went wrong/.test(visible)) return true;
   return /px-captcha|captcha-delivery\.com|cf-chl-opt/.test(body.slice(0, 20_000).toLowerCase());
 }
 
@@ -104,6 +104,7 @@ async function reader(url) {
   const body = await res.text();
   if (!res.ok || body.length < 500 || /^error/i.test(body.trim())) throw new Error(`reader ${res.status}`);
   const title = (body.match(/^Title:\s*(.*)$/m) || [])[1] || '';
+  if (/Warning: Target URL returned error (401|403|429|503)|requiring CAPTCHA/.test(body.slice(0, 1500))) throw new Error('reader reached a block page');
   return { status: res.status, method: 'reader', title, description: '', text: body.slice(0, MAX_TEXT), jsonld: [], finalUrl: url };
 }
 

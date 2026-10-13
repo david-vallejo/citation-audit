@@ -97,6 +97,8 @@ export function normalizeUrl(u) {
     url.hash = '';
     url.hostname = url.hostname.toLowerCase().replace(/^www\./, '');
     for (const k of [...url.searchParams.keys()]) if (/^(utm_|fbclid|gclid|ref|source|_ga)/i.test(k)) url.searchParams.delete(k);
+    // Photo and gallery tabs of a profile are the same listing.
+    if (/(^|\.)(yellowpages|facebook)\.com$/.test(url.hostname)) { url.pathname = url.pathname.replace(/\/(gallery|photos|reviews|about)\/?$/, '/'); url.searchParams.delete('lid'); }
     let s = url.toString();
     if (url.pathname !== '/' && s.endsWith('/')) s = s.slice(0, -1);
     return s;

@@ -4,13 +4,16 @@
   "description": "Discovers a client's web citations, audits NAP + key facts against GBP/website, and outputs a 3-tab Google Sheet",
   "type": "module",
   "main": "src/cli.js",
-  "engines": { "node": ">=24" },
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "start": "node src/cli.js qa",
     "audit": "node src/cli.js",
     "test": "node --test test/*.test.js"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.80.0"
+    "@anthropic-ai/sdk": "^0.80.0",
+    "exceljs": "^4.4.0"
   }
 }

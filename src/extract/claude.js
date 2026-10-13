@@ -78,9 +78,10 @@ const blankable = description => ({ type: 'string', ...(description ? { descript
 const LISTING_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['is_profile_page', 'name', 'address', 'phone', 'website', 'hours', 'year_founded', 'services', 'categories', 'email', 'confidence', 'notes'],
+  required: ['is_profile_page', 'page_kind', 'name', 'address', 'phone', 'website', 'hours', 'year_founded', 'services', 'categories', 'email', 'confidence', 'notes'],
   properties: {
     is_profile_page: { type: 'boolean', description: 'true if this page is a listing/profile for exactly one business' },
+    page_kind: { type: 'string', enum: ['target_listing', 'other_business', 'mention', 'blocked'], description: 'target_listing: a directory/social/partner profile for the target business (any of its locations, even with wrong details). other_business: a listing for a different business, or a list of businesses. mention: an article, press release, job post, sponsorship, blog or other page that names the target but is not its listing. blocked: error page, login wall, captcha or empty page.' },
     name: nullable('string'),
     address: nullableObject(
       { street: blankable(), city: blankable(), state: blankable(), zip: blankable() },
@@ -110,7 +111,8 @@ Rules:
 - year_founded: only from explicit statements like "Established 1998", "Founded in 2005", "In business since 2010", "Years in business: 12" (convert relative claims using the page's evident date only if stated).
 - services: the named services/offerings the listing itself enumerates (not review text). categories: the directory's category labels for the listing.
 - Structured data (JSON-LD) on the page is the most reliable source when present.
-- If the page is an error, login wall, or unrelated, set is_profile_page=false, confidence low, and explain in notes.`;
+- If the page is an error, login wall, or unrelated, set is_profile_page=false, confidence low, and explain in notes.
+- A listing that shows the target's phone number but a town the target does not serve is still page_kind=target_listing: it is the target's listing with the wrong location.`;
 
 function pageBlock(page, url) {
   const parts = [`URL: ${url}`];

@@ -41,6 +41,7 @@ export function compareAddress(canon, cited) {
 
 export function comparePhone(canon, cited) {
   const c = N.normPhone(canon), x = N.normPhone(cited);
+  if (/\d{3}\D*x{3}/i.test(cited || '')) return finding('phone', UNVERIFIED, 1, N.fmtPhone(canon), cited, 'Phone is hidden on the page');
   if (!x) return missing('phone', N.fmtPhone(canon));
   if (!c) return finding('phone', UNVERIFIED, 1, '', N.fmtPhone(cited), 'No canonical phone on file');
   if (c === x) return finding('phone', CONSISTENT, 0.99, N.fmtPhone(canon), N.fmtPhone(cited), 'Match');
@@ -50,6 +51,8 @@ export function comparePhone(canon, cited) {
 
 export function compareWebsite(canon, cited) {
   const c = N.normUrlHost(canon), x = N.normUrlHost(cited);
+  // A business name in the website slot, or a link cut off mid-domain in a search snippet, is not a different website.
+  if (cited && (!/\.[a-z]{2,}(\/|$)/i.test(String(cited).replace(/^https?:\/\//i, '').split(/[?#]/)[0]) || /(\.|\.\.\.|…)\s*$/.test(String(cited)))) return finding('website', UNVERIFIED, 1, canon, cited, 'No usable website link on the page');
   if (!x) return missing('website', canon);
   if (!c) return finding('website', UNVERIFIED, 1, '', cited, 'No canonical website on file');
   if (c === x) return finding('website', CONSISTENT, 0.98, canon, cited, 'Same domain');

@@ -8,6 +8,7 @@ import { refreshCanonical, runAudit, effectiveFindings, latestRun, suggestion, d
 import { discover, addCitation, inventory } from './discovery/index.js';
 import { classifyUrl } from './discovery/directories.js';
 import { writeReport, runById, reportFiles, reportFile } from './report/sheets.js';
+import { buildWorkbook, xlsxName } from './report/xlsx.js';
 import { parseAddress, normHours, normServices, normPhone } from './compare/normalize.js';
 import { restore, schedulePersist, persistNow, enabled as persistEnabled } from './persist.js';
 import { usageToday, resetUsageToday, nextResetAt } from './extract/claude.js';
@@ -246,6 +247,8 @@ pre.log.live::after{content:"\\2588"; color:var(--accent); animation:blink 1.1s 
 .tabs a:hover{color:var(--ink)}
 .tabs a.on{color:var(--ink); font-weight:600; border-bottom-color:var(--accent)}
 .tabs button.pdf-btn{margin-left:auto; align-self:center; color:#ffffff; background:#009ce1; padding:20px 30px; text-transform:uppercase; display:inline-flex; flex-direction:row; flex-wrap:nowrap; align-content:center; justify-content:center; align-items:center; margin-bottom:30px}
+.tabs .pdf-btn + .pdf-btn{margin-left:10px}
+.tabs a.pdf-btn{text-decoration:none; font-size:inherit}
 .print-only{display:none}
 @media print{
   @page{size:landscape; margin:12mm}
@@ -705,7 +708,7 @@ ${files.length ? `<h2 class="no-print">Report files</h2><div class="card no-prin
   `${(f.bytes / 1024).toFixed(1)} KB`,
   `<a class="btn secondary small" href="/run/${id}/file/${esc(f.name)}">Download</a>`,
 ]))}<p class="muted small" style="margin:10px 0 0">Kept in the database, so they survive a restart and ride the same backup.</p></div>` : ''}
-<p class="tabs">${tab('qa', `QA queue (${open})`)}${tab('action', `Client action (${conflicts})`)}${tab('conflicts', 'All conflicts')}${tab('all', `All findings (${rows.length})`)}<button type="button" class="secondary small pdf-btn" data-title="${esc(`${client.name} - Citation Audit - ${({ qa: 'QA queue', action: 'Client action', conflicts: 'All conflicts', all: 'All findings' })[filter] || 'Findings'} - ${run.started_at.slice(0, 10)}`)}" data-client="${esc(client.name)}" data-sub="${esc(`Citation audit ${run.started_at.replace('T', ' ').slice(0, 16)} UTC - ${({ qa: 'QA queue', action: 'Client action', conflicts: 'All conflicts', all: 'All findings' })[filter] || 'Findings'} - downloaded ${now().slice(0, 10)}`)}" data-stats="${esc(`${run.citations_total} profiles audited: ${run.consistent} consistent, ${run.conflicts} with conflicts, ${run.unverified} unable to verify`)}" data-droplast="${filter === 'action' ? '0' : '1'}" onclick="caDownloadPdf(this)">Download PDF</button></p>
+<p class="tabs">${tab('qa', `QA queue (${open})`)}${tab('action', `Client action (${conflicts})`)}${tab('conflicts', 'All conflicts')}${tab('all', `All findings (${rows.length})`)}<button type="button" class="secondary small pdf-btn" data-title="${esc(`${client.name} - Citation Audit - ${({ qa: 'QA queue', action: 'Client action', conflicts: 'All conflicts', all: 'All findings' })[filter] || 'Findings'} - ${run.started_at.slice(0, 10)}`)}" data-client="${esc(client.name)}" data-sub="${esc(`Citation audit ${run.started_at.replace('T', ' ').slice(0, 16)} UTC - ${({ qa: 'QA queue', action: 'Client action', conflicts: 'All conflicts', all: 'All findings' })[filter] || 'Findings'} - downloaded ${now().slice(0, 10)}`)}" data-stats="${esc(`${run.citations_total} profiles audited: ${run.consistent} consistent, ${run.conflicts} with conflicts, ${run.unverified} unable to verify`)}" data-droplast="${filter === 'action' ? '0' : '1'}" onclick="caDownloadPdf(this)">Download PDF</button><a class="btn secondary small pdf-btn" href="/run/${esc(run.id)}/xlsx" title="The client deliverable: every listing with its status and what to fix, key findings, and web mentions.">Download spreadsheet</a></p>
 ${PDF_JS}<div class="card">${table(['Directory / URL', 'Field', 'Status', 'Conf.', 'Canonical', 'Found on profile', 'Reason', filter === 'action' ? 'Suggested correction' : 'QA'], [...(filter === 'action' ? gbpFixes.map(r => [`Google Business Profile<div class="small wrap">${gbp.gbp.facts.maps_url ? ext(gbp.gbp.facts.maps_url, 'Open on Google Maps') : ''}</div><div class="small muted">vs the client website</div>`, fieldLabel(r.field), badge(r.status), String(r.confidence), `<span class="wrap">${esc(r.website)}</span>`, `<span class="wrap">${esc(r.gbp)}</span>`, `<span class="small">${esc(r.reason || '')}</span>`, esc(gbpSuggestion(r))]) : []), ...shown.map(r => [`${esc(r.directory)}<div class="small wrap">${ext(r.url, r.url.replace(/^https?:\/\/(www\.)?/, '').slice(0, 60))}</div><div class="small no-print">${link(`/citation/${r.citation_id}?run=${id}`, 'evidence')} <span class="muted">${esc(r.fetch_method || '')}${r.http_status ? ` ${r.http_status}` : ''}</span></div>`, fieldLabel(r.field), `${badge(r.effective_status)}${r.effective_status !== r.status ? `<div class="small muted">raw: ${esc(r.status)}</div>` : ''}`, String(r.confidence), `<span class="wrap">${esc(r.expected)}</span>`, `<span class="wrap">${esc(r.found)}</span>`, `<span class="small">${esc(r.reason || '')}</span>`, filter === 'action' ? esc(suggestion(r)) : qaForm(r)])], 'findings-table')}</div>`);
 }
 
@@ -930,6 +933,15 @@ async function handle(req, res, body) {
       const type = f.name.endsWith('.csv') ? 'text/csv; charset=utf-8' : 'text/plain; charset=utf-8';
       res.writeHead(200, { 'Content-Type': type, 'Content-Disposition': `attachment; filename="${f.name}"` });
       return res.end(f.content);
+    }
+    if ((mm = p.match(/^\/run\/([\w-]+)\/xlsx$/))) {
+      const run = runById(mm[1]);
+      if (!run) return html(notFoundPage('That audit run no longer exists.'), 404);
+      if (!run.finished_at) return bounce(`/run/${run.id}`, 'warn', 'That audit has not finished yet', 'Wait for it to complete, then download the spreadsheet.');
+      const client = get('SELECT * FROM clients WHERE id = ?', [run.client_id]);
+      const { buffer } = await buildWorkbook(run, client);
+      res.writeHead(200, { 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Content-Disposition': `attachment; filename="${xlsxName(client, run)}"` });
+      return res.end(buffer);
     }
     if ((mm = p.match(/^\/run\/([\w-]+)\/files$/))) {
       const run = runById(mm[1]);
