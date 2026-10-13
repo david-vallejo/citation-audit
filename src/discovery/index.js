@@ -126,6 +126,9 @@ export async function discover(client, canonical, { provider = config.discoveryP
     const digits = anywhere.replace(/\D/g, '');
     if (phone && digits.includes(phone)) return true;
     if (oldPhones.some(p => digits.includes(p))) return true;
+    // Two distinctive words ("empire", "netting") must both appear: one alone matches
+    // every "Empire Fencing LLC" in the country.
+    if (distinctive.length >= 2) return distinctive.every(t => strong.includes(t));
     if (distinctive.length) return distinctive.some(t => strong.includes(t));
     return strong.includes(namePhrase);
   };
