@@ -57,7 +57,7 @@ export function webQueries(canonical, client) {
   if (phone) q.push(`"${phone.slice(0, 3)}-${phone.slice(3, 6)}-${phone.slice(6)}"`, `"(${phone.slice(0, 3)}) ${phone.slice(3, 6)}-${phone.slice(6)}"`, `"${phone.slice(0, 3)}.${phone.slice(3, 6)}.${phone.slice(6)}"`);
   if (a?.street) q.push(`"${a.street}" ${a.city || ''}`.trim());
   const first = name.split(/\s+/).slice(0, 2).join(' ');
-  for (const loc of [a, ...getLocations(client).addresses.map(parseAddress)]) {
+  for (const loc of [a, ...(client.closing ? [] : getLocations(client).addresses.map(parseAddress))]) {
     if (!loc) continue;
     const town = [loc.city || (!/\d/.test(loc.street || '') ? loc.street : ''), loc.state].filter(Boolean).join(' ');
     if (town) q.push(`"${first}" ${town}`, `"${name}" ${town} reviews`);
@@ -80,7 +80,7 @@ export function buildQueries(canonical, client, { full = false } = {}) {
   const anyName = nameVariants(name).map(v => `"${v}"`).join(' OR ');
   if (full) for (const site of [...PRIORITY_KEYS.map(k => PRIORITY_SITES[k]), ...SWEEP_SITES]) q.push(`${anyName} site:${site}`);
   for (const extra of previousQueries(name, getPrevious(client))) if (!q.includes(extra)) q.push(extra);
-  for (const extra of previousQueries(name, getLocations(client))) if (!q.includes(extra)) q.push(extra);
+  if (!client.closing) for (const extra of previousQueries(name, getLocations(client))) if (!q.includes(extra)) q.push(extra);
   return q;
 }
 

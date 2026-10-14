@@ -647,6 +647,7 @@ ${verdict}
 <div><label>Google Business Profile${client.gbp_url ? ` <span class="muted">(${ext(client.gbp_url, 'open')})</span>` : ''}${client.place_id ? ' <span class="muted">linked</span>' : ''}</label><span class="offfield"><input type="text" name="gbp_url" placeholder="Paste the Google Maps link" value="${esc(client.gbp_url || '')}">${GBP_READS ? '' : `<span class="info" tabindex="0" role="note" aria-label="About this field" title="Saved and kept here for reference. Pulling the name, address, phone and hours out of the profile needs a Google Places API key, which requires Google Cloud billing. Until then, Refresh canonical facts reads the client website instead.">i</span>`}</span></div>
 <div class="fields-previous"><label>Previous addresses and phones <span class="muted">(one per line) Discovery also searches for these, and a listing that still shows one is reported as old info for this business.</span></label><textarea name="previous" placeholder="1304 Holtwood Rd, Holtwood, PA 17532&#10;(717) 501-1712">${esc((() => { const p = getPrevious(client); return [...p.addresses, ...p.phones].join('\n'); })())}</textarea></div>
 <div class="fields-previous"><label>Other current locations <span class="muted">(one per line) A second office or service-area profile. Discovery also searches for these, and a listing that shows one counts as correct.</span></label><textarea name="locations" placeholder="Shawnee, KS&#10;(913) 555-0100">${esc((() => { const p = getLocations(client); return [...p.addresses, ...p.phones].join('\n'); })())}</textarea></div>
+<div class="fields-previous"><input type="hidden" name="closing_field" value="1"><label class="inline"><input type="checkbox" name="closing" value="1"${client.closing ? ' checked' : ''}> This location is closing <span class="muted">The spreadsheet lists only the listings that still show this address or phone, with what to mark closed or update. Discovery skips the other locations.</span></label></div>
 <div class="fields-save"><button class="secondary">Save</button>${client.sheet_id ? `<span class="small">${ext(`https://docs.google.com/spreadsheets/d/${client.sheet_id}`, 'Google Sheet')}</span>` : ''}</div>
 </form></div>
 
@@ -1007,6 +1008,7 @@ async function handle(req, res, body) {
       const changed = gbp !== (client.gbp_url || '');
       const patch = { website: f.website?.trim() || null, gbp_url: gbp || null, updated_at: now() };
       if (f.previous !== undefined) { const prev = parsePreviousInput(f.previous); patch.previous_json = prev.addresses.length || prev.phones.length ? JSON.stringify(prev) : null; }
+      if (f.closing_field !== undefined) patch.closing = f.closing === '1' ? 1 : 0;
       if (f.locations !== undefined) { const loc = parsePreviousInput(f.locations); patch.locations_json = loc.addresses.length || loc.phones.length ? JSON.stringify(loc) : null; }
       update('clients', client.id, patch);
       if (changed) { update('clients', client.id, { place_id: null, updated_at: now() }); getDb().prepare('DELETE FROM gbp_profiles WHERE client_id = ?').run(client.id); }

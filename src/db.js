@@ -23,6 +23,7 @@ const ADDED_COLUMNS = [
   ['citations', 'search_snippet', 'TEXT'],
   ['clients', 'previous_json', 'TEXT'],
   ['clients', 'locations_json', 'TEXT'],
+  ['clients', 'closing', 'INTEGER'],
 ];
 function migrate(d) {
   for (const [table, column, type] of ADDED_COLUMNS) {

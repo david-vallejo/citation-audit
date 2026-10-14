@@ -13,7 +13,33 @@ export const WRONG_LOCATION = 'Wrong Location - Remove';
 export const CHECK = 'Check Manually';
 export const STATUS_ORDER = [WRONG_LOCATION, FIX, CHECK, CORRECT];
 
+// Closing-location mode: the report lists only what still points at the location that is
+// closing, so the client knows what to mark closed or repoint before it shuts down.
+export const CLOSING = 'Closing Location - Mark Closed';
+export const CLOSING_PHONE = 'Uses Closing Phone - Update';
+export const CLOSING_ORDER = [CLOSING, CLOSING_PHONE, CHECK];
+
+export function sameStreet(found, expected) {
+  const x = N.parseAddress(found), c = N.parseAddress(expected);
+  if (!x?.street || !c?.street) return false;
+  const a = N.splitStreet(x.street).base, b = N.splitStreet(c.street).base;
+  if (a && a === b) return true;
+  const num = s => (s.match(/^\d+/) || [''])[0], word = s => s.replace(/^\d+\s*/, '').split(' ')[0] || '';
+  return Boolean(num(a)) && num(a) === num(b) && word(a) === word(b);
+}
+
+export function closingMatch({ address, phone, text = '' }, closing) {
+  if (address && sameStreet(address, closing.address)) return 'address';
+  const p = N.normPhone(closing.phone);
+  if (p && N.normPhone(phone) === p) return 'phone';
+  const t = text.toLowerCase(), digits = text.replace(/\D/g, '');
+  if ((p && digits.includes(p)) || (closing.street && t.includes(closing.street.toLowerCase())) || (closing.city && new RegExp(`\\b${closing.city.toLowerCase().replace(/[^a-z ]/g, '')}\\b`).test(t))) return 'mention';
+  return null;
+}
+
 const NAP_FIELDS = ['name', 'address', 'phone', 'website'];
+// Throwaway reverse-phone-lookup pages hosted on cloud storage buckets; never a real listing.
+const SPAM_HOST = /(\.web\.core\.windows\.net|\.s3\.amazonaws\.com|storage\.googleapis\.com|\.googleapis\.com)$/;
 const SOCIAL = /(^|\.)(facebook|instagram|youtube|tiktok|x|twitter|pinterest)\.com$/;
 const DIRECTORY_LABELS = { bbb: 'BBB', yelp: 'Yelp', yellowpages: 'YellowPages', mapquest: 'MapQuest', manta: 'Manta', houzz: 'Houzz', nextdoor: 'Nextdoor', linkedin: 'LinkedIn', facebook: 'Facebook', instagram: 'Instagram', youtube: 'YouTube', angi: 'Angi', homeadvisor: 'HomeAdvisor', thumbtack: 'Thumbtack', chamberofcommerce: 'ChamberofCommerce.com', showmelocal: 'ShowMeLocal', foursquare: 'Foursquare', thefencegroup: 'The Fence Group', superpages: 'Superpages', 'fencetrac.com': 'FenceTrac', 'thebluebook.com': 'The Blue Book', 'napc.pro': 'NAPC Directory', 'network.procore.com': 'Procore Network', 'projects.constructconnect.com': 'ConstructConnect', 'cgmimm.com': 'CGMIMM', 'fenceshow.com': 'Fence Show', 'business.liba.org': 'LIBA', 'tiktok.com': 'TikTok', buildzoom: 'BuildZoom', porch: 'Porch', merchantcircle: 'MerchantCircle', hotfrog: 'Hotfrog', alignable: 'Alignable', dnb: 'Dun & Bradstreet', birdeye: 'Birdeye' };
 
@@ -65,6 +91,10 @@ export function buildListings(run, client) {
   const homeState = normState(addressParts(displayCanonical('address', canonical.address?.value))?.state);
   const okStates = new Set([homeState, ...locations.addresses.map(a => normState(addressParts(a)?.state))].filter(Boolean));
   const ctx = { knownPhones };
+  const closingAddr = displayCanonical('address', canonical.address?.value);
+  const closingParts = addressParts(closingAddr) || {};
+  const closing = client.closing ? { address: closingAddr, phone: canonical.phone?.value, city: closingParts.city || '', street: (closingParts.street || '').trim() } : null;
+  const closingPhone = closing ? N.fmtPhone(closing.phone) : '';
 
   const snaps = new Map(all('SELECT citation_id, extracted_json, fetch_method, http_status FROM snapshots WHERE run_id = ?', [run.id]).map(s => [s.citation_id, s]));
   const current = new Map(all('SELECT id, status, search_snippet FROM citations WHERE client_id = ?', [client.id]).map(c => [c.id, c]));
@@ -77,6 +107,7 @@ export function buildListings(run, client) {
     if (!cur || cur.status !== 'active') { excluded.push({ url: c.url, why: `marked ${cur?.status || 'removed'}` }); continue; }
     let data = null;
     try { data = JSON.parse(snap.extracted_json || 'null'); } catch { data = null; }
+    if (SPAM_HOST.test(host(c.url))) { excluded.push({ url: c.url, why: 'spam phone-lookup page' }); continue; }
     if ([404, 410].includes(snap.http_status) && !data?.address && !data?.phone) { excluded.push({ url: c.url, why: `page gone (HTTP ${snap.http_status})` }); continue; }
     const live = fs.filter(f => f.effective_status !== 'dismissed');
     const kind = inferKind(data, fs.map(f => f.reason || '').join(' '));
@@ -100,6 +131,25 @@ export function buildListings(run, client) {
       if (where && [...knownPhones].some(p => digits.includes(p))) { st = normState(where[2]); phoneIsClient = true; if (!shown.address) shown.address = `${where[1]}, ${where[2]}`; }
     }
     const base = { site, url: c.url, directory: c.directory, ...shown };
+
+    if (closing) {
+      if (kind === 'other_business') { excluded.push({ url: c.url, why: 'a different business' }); continue; }
+      const text = [c.url, cur.search_snippet, data?.notes, data?.name, shown.address].filter(Boolean).join(' ');
+      const m = closingMatch({ address: data?.address ? shown.address : '', phone: data?.phone, text }, closing);
+      const listed = SOCIAL.test(host(c.url)) || Boolean(DIRECTORY_LABELS[c.directory]);
+      const where = closing.city || 'closing';
+      if (!m || (m === 'mention' && (data?.address || data?.phone))) { excluded.push({ url: c.url, why: 'another location' }); continue; }
+      if (kind === 'mention' && !listed) { mentions.push({ site, url: c.url, what: (data?.notes || cur.search_snippet || '').split(/(?<=\.)\s/)[0].slice(0, 220) }); continue; }
+      if (m === 'address') {
+        const otherPhone = shown.phone && N.normPhone(shown.phone) !== N.normPhone(closing.phone) ? ` It shows the phone as ${shown.phone}.` : '';
+        listings.push({ ...base, status: CLOSING, notes: `Lists the ${where} location.${otherPhone} Mark it permanently closed, or remove it, when the location closes.`, issue: { type: 'closing' } });
+      } else if (m === 'phone') {
+        listings.push({ ...base, status: CLOSING_PHONE, notes: `Shows ${shown.address || 'a different address'} with the ${where} location's phone, ${closingPhone}. If that number is being shut off, change it to a line that stays active.`, issue: { type: 'closing_phone', key: shown.address } });
+      } else {
+        listings.push({ ...base, status: CHECK, notes: `Mentions the ${where} location but the page could not be fully read. Open it and check whether it lists the closing location.`, issue: { type: 'manual' } });
+      }
+      continue;
+    }
 
     if (phoneIsClient && st && okStates.size && !okStates.has(st)) {
       listings.push({ ...base, status: WRONG_LOCATION, notes: `Listed in ${shown.address || st.toUpperCase()} with the client's phone number. The business has no location there; request removal.`, issue: { type: 'wrong_location', key: (() => { const a = addressParts(shown.address); return a?.city ? `${a.city}, ${st.toUpperCase()}` : st.toUpperCase(); })() } });
@@ -152,10 +202,11 @@ export function buildListings(run, client) {
   for (const l of listings) if (l.status !== WRONG_LOCATION && DIRECTORY_LABELS[l.directory]) perSite.set(l.site, (perSite.get(l.site) || 0) + 1);
   for (const l of listings) {
     const n = perSite.get(l.site);
-    if (n > 1 && l.status !== WRONG_LOCATION) l.notes = `${l.notes ? l.notes + ' ' : ''}One of ${n} listings on ${l.site}; merge the duplicates or remove the extra.`.trim();
+    if (n > 1 && l.status !== WRONG_LOCATION && !closing) l.notes = `${l.notes ? l.notes + ' ' : ''}One of ${n} listings on ${l.site}; merge the duplicates or remove the extra.`.trim();
   }
-  listings.sort((a, b) => STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status) || a.site.localeCompare(b.site));
-  return { listings, mentions, excluded, findings: keyFindings(listings), canonical };
+  const order = closing ? CLOSING_ORDER : STATUS_ORDER;
+  listings.sort((a, b) => order.indexOf(a.status) - order.indexOf(b.status) || a.site.localeCompare(b.site));
+  return { listings, mentions, excluded, findings: closing ? closingFindings(listings, closing, excluded) : keyFindings(listings), canonical, closing };
 }
 
 const list = arr => { const u = [...new Set(arr)]; return u.length <= 2 ? u.join(' and ') : `${u.slice(0, -1).join(', ')} and ${u.at(-1)}`; };
@@ -179,5 +230,18 @@ export function keyFindings(listings) {
   if (addr.size) out.push(`Address errors in the right city (wrong street, missing parts, typos): ${list([...addr.values()].flat())}.`);
   const manual = group('manual');
   if (manual.size) out.push(`${[...manual.values()].flat().length} listing(s) block automated checks and need a quick manual look: ${list([...manual.values()].flat())}.`);
+  return out;
+}
+
+export function closingFindings(listings, closing, excluded = []) {
+  const out = [], where = closing.city || 'closing';
+  const of = st => listings.filter(l => l.status === st).map(l => l.site);
+  const addr = of(CLOSING), phone = listings.filter(l => l.status === CLOSING_PHONE), manual = of(CHECK);
+  if (addr.length) out.push(`${addr.length} listing(s) show the ${where} location and should be marked permanently closed or removed when it closes: ${list(addr)}.`);
+  if (phone.length) out.push(`${phone.length} listing(s) at other addresses use the ${where} phone, ${N.fmtPhone(closing.phone)}: ${phone.map(l => `${l.site}${l.address ? ` (${l.address})` : ''}`).join('; ')}. If that number is shut off these listings stop working, so update the phone first.`);
+  if (manual.length) out.push(`${manual.length} page(s) mention the ${where} location but could not be fully read; check them by hand: ${list(manual)}.`);
+  const others = excluded.filter(e => e.why === 'another location').length;
+  if (others) out.push(`${others} other listing(s) belong to the business's other locations and are not included here.`);
+  if (!addr.length && !phone.length) out.push(`No listings were found that still show the ${where} address or phone.`);
   return out;
 }
