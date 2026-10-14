@@ -138,6 +138,7 @@ export function buildListings(run, client) {
       const m = closingMatch({ address: data?.address ? shown.address : '', phone: data?.phone, text }, closing);
       const listed = SOCIAL.test(host(c.url)) || Boolean(DIRECTORY_LABELS[c.directory]);
       const where = closing.city || 'closing';
+      if (SOCIAL.test(host(c.url)) && m !== 'address' && m !== 'phone') { listings.push({ ...base, status: CHECK, notes: `The business's own social profile. Open the About section and check whether it still lists the ${where} address or phone.`, issue: { type: 'manual' } }); continue; }
       if (!m || (m === 'mention' && (data?.address || data?.phone))) { excluded.push({ url: c.url, why: 'another location' }); continue; }
       if (kind === 'mention' && !listed) { mentions.push({ site, url: c.url, what: (data?.notes || cur.search_snippet || '').split(/(?<=\.)\s/)[0].slice(0, 220) }); continue; }
       if (m === 'address') {
@@ -191,6 +192,7 @@ export function buildListings(run, client) {
   const rank = l => (l.address ? 2 : 0) + (l.phone ? 2 : 0) + (l.name ? 1 : 0) + (l.status === CHECK ? -5 : 0);
   const keyOf = l => {
     const u = new URL(l.url), h = u.hostname.replace(/^(www|[a-z]{2})\./, '');
+    if (closing && l.status === CHECK && SOCIAL.test(h)) return h;
     return DIRECTORY_LABELS[l.directory] ? `${h}${u.pathname.replace(/^\/[a-z]{2}(?=\/)/, '').replace(/\/$/, '')}${/\.aspx$|\.php$/.test(u.pathname) ? u.search : ''}` : h;
   };
   const best = new Map();
