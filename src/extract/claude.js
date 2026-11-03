@@ -49,7 +49,7 @@ export function resetUsageToday() {
   return { ok: true, before };
 }
 export class BudgetError extends Error {}
-function assertBudget() {
+export function assertBudget() {
   const u = usageToday();
   if (u.calls >= u.calls_limit) throw new BudgetError(`daily Claude call cap reached (${u.calls}/${u.calls_limit}); raise DAILY_CLAUDE_CALLS or re-run tomorrow`);
   if (u.cost >= u.cost_limit) throw new BudgetError(`daily Claude spend cap reached ($${u.cost.toFixed(2)}/$${u.cost_limit.toFixed(2)}); raise DAILY_COST_LIMIT_USD or re-run tomorrow`);

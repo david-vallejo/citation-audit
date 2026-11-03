@@ -5,7 +5,7 @@ import { placeDetails, searchPlaces, resolvePlaceInput } from './canonical/place
 import { scrapeWebsite } from './canonical/website.js';
 import { discover } from './discovery/index.js';
 import { fetchPage, mapLimit } from './fetch/page.js';
-import { extractListing, BudgetError, usageToday } from './extract/claude.js';
+import { extractListing, BudgetError, usageToday, assertBudget } from './extract/claude.js';
 import { classify, unverifiedAll, displayCanonical, matchesPreviousPhone, matchesPreviousAddress, OLD_INFO_PREFIX, CONFLICT, UNVERIFIED, CONSISTENT } from './compare/classify.js';
 import { normPhone, fmtPhone } from './compare/normalize.js';
 
@@ -71,6 +71,8 @@ async function auditOne(run, client, canonical, target, citation, log) {
   const startedAt = now();
   let page, findings, snapshot = { id: uuid(), run_id: run.id, citation_id: citation.id, fetched_at: startedAt, http_status: null, fetch_method: 'error', extracted_json: null, extraction_confidence: null, text_excerpt: null, error: null };
   try {
+    // Once Claude's daily cap is hit nothing fetched can be read, so stop spending proxy credits on pages.
+    assertBudget();
     page = await fetchPage(citation.url);
     snapshot.http_status = page.status; snapshot.fetch_method = page.method; snapshot.text_excerpt = page.text.slice(0, 2000) || null;
     let source = page, cap = 1, evidenceNote = '';
