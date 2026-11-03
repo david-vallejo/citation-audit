@@ -87,6 +87,10 @@ async function auditOne(run, client, canonical, target, citation, log) {
     } else if (page.method === 'archive') { cap = 0.7; evidenceNote = ` [from archived copy ${page.archivedOn}]`; }
     if (!findings) {
       const { data } = await extractListing(source, citation.url, target);
+      // Claude is told the client's phone so it can recognise the listing, and on a thin page it
+      // sometimes writes that phone back as if the page showed it. Keep a phone only if the page has it.
+      const sourceDigits = [source.title, source.description, source.text, JSON.stringify(source.jsonld || [])].join(' ').replace(/\D/g, '');
+      if (normPhone(data.phone) && !sourceDigits.includes(normPhone(data.phone))) data.phone = null;
       snapshot.extracted_json = JSON.stringify(data); snapshot.extraction_confidence = data.confidence;
       const oldInfo = matchesPreviousPhone(target.previous, data.phone) || matchesPreviousAddress(target.previous, data.address)
         || matchesPreviousPhone(target.locations, data.phone) || matchesPreviousAddress(target.locations, data.address);

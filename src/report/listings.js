@@ -118,7 +118,7 @@ export function buildListings(run, client) {
     let data = null;
     try { data = JSON.parse(snap.extracted_json || 'null'); } catch { data = null; }
     if (SPAM_HOST.test(host(c.url))) { excluded.push({ url: c.url, why: 'spam phone-lookup page' }); continue; }
-    if ([404, 410].includes(snap.http_status) && !data?.address && !data?.phone) { excluded.push({ url: c.url, why: `page gone (HTTP ${snap.http_status})` }); continue; }
+    if (([404, 410].includes(snap.http_status) || /\b410\b|page has been removed/i.test(data?.notes || '')) && !data?.address && !data?.phone) { excluded.push({ url: c.url, why: `page gone (HTTP ${snap.http_status})` }); continue; }
     const live = fs.filter(f => f.effective_status !== 'dismissed');
     const kind = inferKind(data, fs.map(f => f.reason || '').join(' '));
     const shown = {
@@ -171,8 +171,8 @@ export function buildListings(run, client) {
     const social = SOCIAL.test(host(c.url)) || /(^|\.)tiktok\.com$/.test(host(c.url));
     const directory = social || Boolean(DIRECTORY_LABELS[c.directory]);
     if (kind === 'other_business') { excluded.push({ url: c.url, why: 'a different business' }); continue; }
-    // Same name, but its own phone in a state the client has never been in: a namesake company.
-    if (N.normPhone(data?.phone) && !phoneIsClient && st && okStates.size && !okStates.has(st)) { excluded.push({ url: c.url, why: 'a different business with the same name' }); continue; }
+    // Same name, in a state the client has never been in, without the client's phone: a namesake company.
+    if (!phoneIsClient && st && okStates.size && !okStates.has(st)) { excluded.push({ url: c.url, why: 'a different business with the same name' }); continue; }
     if (kind === 'mention' && !directory && /does not mention|contains no information matching|no information (about|matching)|not the target business|neither appears to be/i.test(data?.notes || '')) { excluded.push({ url: c.url, why: 'does not mention the business' }); continue; }
     if (kind === 'mention' && !directory) { mentions.push({ site, url: c.url, what: (data?.notes || cur.search_snippet || '').split(/(?<=\.)\s/)[0].slice(0, 220) }); continue; }
 
@@ -207,6 +207,8 @@ export function buildListings(run, client) {
   const rank = l => (l.address ? 2 : 0) + (l.phone ? 2 : 0) + (l.name ? 1 : 0) + (l.status === CHECK ? -5 : 0);
   const keyOf = l => {
     const u = new URL(l.url), h = u.hostname.replace(/^(www|[a-z]{2})\./, '');
+    const fbId = /(^|\.)facebook\.com$/.test(h) && (l.url.match(/\d{12,}/) || [])[0];
+    if (fbId) return `facebook:${fbId}`;
     if (closing && l.status === CHECK && SOCIAL.test(h)) return h;
     return DIRECTORY_LABELS[l.directory] ? `${h}${u.pathname.replace(/^\/[a-z]{2}(?=\/)/, '').replace(/\/$/, '')}${/\.aspx$|\.php$/.test(u.pathname) ? u.search : ''}` : h;
   };
