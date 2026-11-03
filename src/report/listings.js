@@ -89,7 +89,7 @@ export function buildListings(run, client) {
   const locations = getLocations(client), previous = getPrevious(client);
   const knownPhones = new Set([canonical.phone?.value, ...locations.phones, ...previous.phones].map(N.normPhone).filter(Boolean));
   const homeState = normState(addressParts(displayCanonical('address', canonical.address?.value))?.state);
-  const okStates = new Set([homeState, ...locations.addresses.map(a => normState(addressParts(a)?.state))].filter(Boolean));
+  const okStates = new Set([homeState, ...[...locations.addresses, ...previous.addresses].map(a => normState(addressParts(a)?.state))].filter(Boolean));
   const ctx = { knownPhones };
   const closingAddr = displayCanonical('address', canonical.address?.value);
   const closingParts = addressParts(closingAddr) || {};
@@ -120,7 +120,9 @@ export function buildListings(run, client) {
     let phoneIsClient = knownPhones.has(N.normPhone(data?.phone));
     let st = normState(addressParts(data?.address)?.state);
     // Read as "not the target" yet showing the client's phone: the client's listing, filed in the wrong place.
-    if (!st && kind === 'other_business' && [...knownPhones].some(p => (data?.notes || '').replace(/\D/g, '').includes(p))) {
+    // The notes also restate the client's own phone when ruling a page out, so only a sentence saying it matches counts.
+    const phoneMatches = (data?.notes || '').split(/(?<=\.)\s+|[;,]\s*(?=but\b|however\b|while\b)/i).filter(s => /\bmatches\b/i.test(s) && !/\b(none|not|no)\b[^.]{0,20}\bmatch/i.test(s)).join(' ');
+    if (!st && kind === 'other_business' && [...knownPhones].some(p => phoneMatches.replace(/\D/g, '').includes(p))) {
       const named = (data?.notes || '').match(/\b([A-Z][A-Za-z.]+(?: [A-Z][A-Za-z.]+)*),\s*([A-Z][a-z]+(?: [A-Z][a-z]+)?|[A-Z]{2})\b/);
       if (named && STATES[N.clean(named[2])] || named?.[2]?.length === 2) { st = normState(named[2]); phoneIsClient = true; if (!shown.address) shown.address = `${named[1]}, ${st.toUpperCase()}`; if (!shown.phone) shown.phone = N.fmtPhone([...knownPhones][0]); }
     }
@@ -159,6 +161,8 @@ export function buildListings(run, client) {
     const social = SOCIAL.test(host(c.url)) || /(^|\.)tiktok\.com$/.test(host(c.url));
     const directory = social || Boolean(DIRECTORY_LABELS[c.directory]);
     if (kind === 'other_business') { excluded.push({ url: c.url, why: 'a different business' }); continue; }
+    // Same name, but its own phone in a state the client has never been in: a namesake company.
+    if (N.normPhone(data?.phone) && !phoneIsClient && st && okStates.size && !okStates.has(st)) { excluded.push({ url: c.url, why: 'a different business with the same name' }); continue; }
     if (kind === 'mention' && !directory) { mentions.push({ site, url: c.url, what: (data?.notes || cur.search_snippet || '').split(/(?<=\.)\s/)[0].slice(0, 220) }); continue; }
 
     // Re-check phone and website with today's rules, so an older run's hidden phone or
