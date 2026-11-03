@@ -44,6 +44,8 @@ export async function buildWorkbook(run, client) {
 
   const wb = new ExcelJS.Workbook();
   wb.creator = 'Citation Audit';
+  // The citation list is what the client works from, so it opens first.
+  const list = wb.addWorksheet('Full Citation List');
   const s = wb.addWorksheet('Summary');
   s.columns = [{ width: 40 }, { width: 110 }];
   const line = (a, b = '', bold = false) => { const r = s.addRow([a, b]); r.eachCell({ includeEmpty: true }, c => { c.alignment = WRAP; }); if (bold) r.getCell(1).font = { bold: true }; return r; };
@@ -65,7 +67,7 @@ export async function buildWorkbook(run, client) {
     findings.forEach((f, i) => line(String(i + 1), f));
   }
 
-  table(wb.addWorksheet('Full Citation List'), ['Directory', 'Profile URL', 'Status', 'Name Shown', 'Address Shown', 'Phone Shown', closing ? 'What To Do / Notes' : 'What To Fix / Notes'],
+  table(list, ['Directory', 'Profile URL', 'Status', 'Name Shown', 'Address Shown', 'Phone Shown', closing ? 'What To Do / Notes' : 'What To Fix / Notes'],
     all.map(l => [l.site, l.url, l.status, l.name, l.address, l.phone, l.notes]), [34, 60, 22, 30, 38, 18, 70], { statusCol: 3 });
   table(wb.addWorksheet('Web Mentions'), ['Site', 'Page URL', 'What It Is'], mentions.map(m => [m.site, m.url, m.what]), [36, 70, 80]);
   return { buffer: Buffer.from(await wb.xlsx.writeBuffer()), counts, total: all.length };
