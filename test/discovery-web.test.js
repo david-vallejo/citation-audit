@@ -32,3 +32,10 @@ test('DuckDuckGo results unwrap to the real listing URL', async () => {
   const html = '<div class="result results_links results_links_deep web-result"><a rel="nofollow" class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fwww.yelp.com%2Fbiz%2Fsummit-fence-akron-2&amp;rut=x">Summit Fence - Akron, OH - Yelp</a><a class="result__snippet" href="#">Fence company in Akron</a></div>';
   assert.deepEqual(parse(html), [{ url: 'https://www.yelp.com/biz/summit-fence-akron-2', title: 'Summit Fence - Akron, OH - Yelp', snippet: 'Fence company in Akron' }]);
 });
+
+test('a DuckDuckGo "No results found" page is an empty answer, not an error', async () => {
+  const { parse } = await import('../src/discovery/providers/ddg.js');
+  assert.deepEqual(parse('<div class="no-results">No results found for <b>"234-521-2351"</b></div>'), []);
+  const src = (await import('node:fs')).readFileSync(new URL('../src/discovery/providers/ddg-proxy.js', import.meta.url), 'utf8');
+  assert.match(src, /No results found/);
+});

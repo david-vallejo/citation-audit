@@ -104,12 +104,13 @@ export async function discover(client, canonical, { provider = config.discoveryP
   if (serpGoogle.available() && !chain.includes('scraperapi-google')) chain = ['scraperapi-google', ...chain];
   // Google's result links are now google.com/goto pages that no longer redirect, so most of
   // its results cannot be read back. DuckDuckGo through the same key returns real links for
-  // about a credit a search, so it leads; Google still adds what it can on the open searches.
+  // about a credit a search, so it leads; Google, at 25 credits a search, is only asked an
+  // open search that DuckDuckGo had nothing for.
   if (ddgProxy.available() && !chain.includes('ddg-proxy')) chain = ['ddg-proxy', ...chain];
   for (const name of chain) if (!PROVIDERS[name]) throw new Error(`Unknown discovery provider "${name}" (ddg-proxy | scraperapi-google | google-cse | ddg | serpapi)`);
   let idx = 0;
   const alsoGoogle = query => serpGoogle.available() && chain[idx] !== 'scraperapi-google' && !/\bsite:/.test(query);
-  log(`Discovery providers, in order: ${chain.join(' → ')}${serpGoogle.available() && chain[0] !== 'scraperapi-google' ? ' (plus Google on open searches)' : ''}`);
+  log(`Discovery providers, in order: ${chain.join(' → ')}${serpGoogle.available() && chain[0] !== 'scraperapi-google' ? ' (Google backs up open searches that come back empty)' : ''}`);
   const current = () => chain[idx];
   const clientHost = normUrlHost(client.website || canonical.website?.value);
   const phone = canonical.phone?.value ? normPhone(canonical.phone.value) : null;
@@ -187,7 +188,7 @@ export async function discover(client, canonical, { provider = config.discoveryP
     }
     if (results === 'stop') { log('  all discovery providers failed; stopping (inventory so far is kept)'); break; }
     if (results === false) { skipped++; log(`  skipped after repeated errors: ${query}`); continue; }
-    if (alsoGoogle(query)) {
+    if (!results.length && alsoGoogle(query)) {
       try { const more = await serpGoogle.search(query); const have = new Set(results.map(r => unwrapUrl(r.url))); results = [...results, ...more.filter(r => !have.has(unwrapUrl(r.url)))]; }
       catch (e) { log(`  ! scraperapi-google: ${e.message.slice(0, 160)}`); }
     }

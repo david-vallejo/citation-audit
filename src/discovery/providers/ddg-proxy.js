@@ -17,7 +17,7 @@ export async function search(query, { limit = 30 } = {}) {
     try {
       const res = await fetchWithTimeout(`https://api.scraperapi.com/?api_key=${config.fetchProxy.key}&url=${encodeURIComponent(target)}`, { timeout: 90_000 });
       const html = await res.text();
-      if (res.ok && /result__a|No results\./i.test(html)) return parse(html, limit);
+      if (res.ok && /result__a|No results\.|No results found/i.test(html)) return parse(html, limit);
       last = `ddg-proxy ${res.status}`;
     } catch (e) { last = `ddg-proxy ${e.message}`; }
     await sleep(2000 * attempt);

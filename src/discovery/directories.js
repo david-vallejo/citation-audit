@@ -13,7 +13,7 @@ const DIRECTORIES = [
   { key: 'facebook', host: /(^|\.)facebook\.com$/, profile: /^\/(?!search|groups|events|marketplace|people|pages\/category|login|public)[A-Za-z0-9.]+\/?$|\/pages\/[^/]+\/\d+|^\/p\/[^/]+-\d+\/?$|^\/people\/[^/]+\/\d+\/?$|^\/profile\.php\?id=\d+/ },
   { key: 'mapquest', host: /(^|\.)mapquest\.com$/, profile: /\/us\/[a-z-]+\/[a-z0-9-]+-\d+$/ },
   { key: 'manta', host: /(^|\.)manta\.com$/, profile: /\/c\// },
-  { key: 'superpages', host: /(^|\.)superpages\.com$/, profile: /\/bp\// },
+  { key: 'superpages', host: /(^|\.)superpages\.com$/, profile: /\/bpp?\// },
   { key: 'merchantcircle', host: /(^|\.)merchantcircle\.com$/, profile: /\/[a-z0-9-]+-[a-z]{2}$/ },
   { key: 'hotfrog', host: /(^|\.)hotfrog\.com$/, profile: /\/company\// },
   { key: 'chamberofcommerce', host: /(^|\.)chamberofcommerce\.com$/, profile: /\/business-directory\/|\/united-states\// },
