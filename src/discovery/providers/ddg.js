@@ -12,6 +12,13 @@ export async function search(query, { limit = 25, attempt = 1 } = {}) {
     if (attempt === 1) { await sleep(45_000); return search(query, { limit, attempt: 2 }); }
     throw new Error(`ddg rate-limited (HTTP ${res.status}) even after a 45s cool-off; switch DISCOVERY_PROVIDER or add google-cse to the chain`);
   }
+  const out = parse(html, limit);
+  await sleep(6000 + Math.random() * 4000);
+  return out;
+}
+
+export function parse(html, limit = 25) {
+  const blocks = html.split(/<div class="result results_links/).slice(1);
   const out = [];
   for (const b of blocks) {
     const a = b.match(/<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/);
@@ -25,6 +32,5 @@ export async function search(query, { limit = 25, attempt = 1 } = {}) {
     out.push({ url, title: decode(a[2]), snippet: decode(snip?.[1]) });
     if (out.length >= limit) break;
   }
-  await sleep(6000 + Math.random() * 4000);
   return out;
 }

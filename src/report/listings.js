@@ -11,7 +11,18 @@ export const CORRECT = 'Correct';
 export const FIX = 'Needs Correction';
 export const WRONG_LOCATION = 'Wrong Location - Remove';
 export const CHECK = 'Check Manually';
-export const STATUS_ORDER = [WRONG_LOCATION, FIX, CHECK, CORRECT];
+export const NOT_FOUND = 'Not Found - Create Listing';
+export const STATUS_ORDER = [WRONG_LOCATION, FIX, CHECK, CORRECT, NOT_FOUND];
+
+// The directories every local business should be on. When the audit turns up no listing on
+// one of them, the report says so, so a short list reads as "missing here" rather than "done".
+// Bing Places and Apple Maps are not visible to web search at all, so they are always checked by hand.
+const CORE = [
+  ['facebook', 'Facebook'], ['yelp', 'Yelp'], ['bbb', 'BBB'], ['yellowpages', 'YellowPages'], ['mapquest', 'MapQuest'],
+  ['nextdoor', 'Nextdoor'], ['angi', 'Angi'], ['homeadvisor', 'HomeAdvisor'], ['thumbtack', 'Thumbtack'], ['houzz', 'Houzz'],
+  ['manta', 'Manta'], ['chamberofcommerce', 'ChamberofCommerce.com'], ['superpages', 'Superpages'], ['foursquare', 'Foursquare'],
+];
+const UNSEARCHABLE = [['bing-places', 'Bing Places', 'https://www.bingplaces.com'], ['apple-maps', 'Apple Maps (Apple Business Connect)', 'https://businessconnect.apple.com']];
 
 // Closing-location mode: the report lists only what still points at the location that is
 // closing, so the client knows what to mark closed or repoint before it shuts down.
@@ -212,6 +223,11 @@ export function buildListings(run, client) {
     const n = perSite.get(l.site);
     if (n > 1 && l.status !== WRONG_LOCATION && l.status !== CHECK && !closing) l.notes = `${l.notes ? l.notes + ' ' : ''}One of ${n} listings on ${l.site}; merge the duplicates or remove the extra.`.trim();
   }
+  if (!closing) {
+    const have = new Set(listings.filter(l => l.status !== WRONG_LOCATION).map(l => l.directory));
+    for (const [key, label] of CORE) if (!have.has(key)) listings.push({ site: label, url: '', directory: key, name: '', address: '', phone: '', status: NOT_FOUND, notes: `No ${label} listing for this business turned up in search. Search ${label} once by name and phone to be sure, then create the listing with the correct name, address and phone.`, issue: { type: 'not_found' } });
+    for (const [key, label, url] of UNSEARCHABLE) if (!have.has(key)) listings.push({ site: label, url, directory: key, name: '', address: '', phone: '', status: CHECK, notes: `${label} is not visible to web search, so it cannot be checked automatically. Look the business up there and confirm or claim the listing.`, issue: { type: 'unsearchable' } });
+  }
   const order = closing ? CLOSING_ORDER : STATUS_ORDER;
   listings.sort((a, b) => order.indexOf(a.status) - order.indexOf(b.status) || a.site.localeCompare(b.site));
   return { listings, mentions, excluded, findings: closing ? closingFindings(listings, closing, excluded) : keyFindings(listings), canonical, closing };
@@ -238,6 +254,10 @@ export function keyFindings(listings) {
   if (addr.size) out.push(`Address errors in the right city (wrong street, missing parts, typos): ${list([...addr.values()].flat())}.`);
   const manual = group('manual');
   if (manual.size) out.push(`${[...manual.values()].flat().length} listing(s) block automated checks and need a quick manual look: ${list([...manual.values()].flat())}.`);
+  const unsearchable = group('unsearchable');
+  if (unsearchable.size) out.push(`${list([...unsearchable.values()].flat())} cannot be searched automatically; check them by hand.`);
+  const missing = group('not_found');
+  if (missing.size) out.push(`No listing found on ${[...missing.values()].flat().length} major directories: ${list([...missing.values()].flat())}. These are citations to build.`);
   return out;
 }
 

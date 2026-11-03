@@ -1,9 +1,9 @@
 import ExcelJS from 'exceljs';
 import { getCanonical, getLocations } from '../db.js';
 import { displayCanonical } from '../compare/classify.js';
-import { buildListings, CORRECT, FIX, WRONG_LOCATION, CHECK, STATUS_ORDER, CLOSING, CLOSING_PHONE, CLOSING_ORDER } from './listings.js';
+import { buildListings, CORRECT, FIX, WRONG_LOCATION, CHECK, NOT_FOUND, STATUS_ORDER, CLOSING, CLOSING_PHONE, CLOSING_ORDER } from './listings.js';
 
-const FILL = { [CORRECT]: 'FFD9EAD3', [FIX]: 'FFFCE5CD', [WRONG_LOCATION]: 'FFF4CCCC', [CHECK]: 'FFFFF2CC', [CLOSING]: 'FFF4CCCC', [CLOSING_PHONE]: 'FFFCE5CD' };
+const FILL = { [CORRECT]: 'FFD9EAD3', [FIX]: 'FFFCE5CD', [WRONG_LOCATION]: 'FFF4CCCC', [CHECK]: 'FFFFF2CC', [NOT_FOUND]: 'FFEFEFEF', [CLOSING]: 'FFF4CCCC', [CLOSING_PHONE]: 'FFFCE5CD' };
 const HEADER = { font: { bold: true, color: { argb: 'FFFFFFFF' } }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F3A5F' } } };
 const WRAP = { vertical: 'top', wrapText: true };
 
@@ -56,8 +56,8 @@ export async function buildWorkbook(run, client) {
   for (const p of locations.phones) line(closing ? 'Other phone (not in this list)' : 'Other phone', p);
   line('');
   line('Results', '', true);
-  line(closing ? 'Listings that point to this location' : 'Listings found', all.length);
-  for (const st of closing ? CLOSING_ORDER : [CORRECT, FIX, WRONG_LOCATION, CHECK]) { const r = line(st, counts[st]); r.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: FILL[st] } }; }
+  line(closing ? 'Listings that point to this location' : 'Listings found', all.filter(l => l.status !== NOT_FOUND && l.issue?.type !== 'unsearchable').length);
+  for (const st of closing ? CLOSING_ORDER : [CORRECT, FIX, WRONG_LOCATION, CHECK, NOT_FOUND]) { const r = line(st, counts[st]); r.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: FILL[st] } }; }
   line('Web mentions (not listings)', mentions.length);
   if (findings.length) {
     line('');

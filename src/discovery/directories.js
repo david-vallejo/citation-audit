@@ -10,7 +10,7 @@ const DIRECTORIES = [
   { key: 'porch', host: /(^|\.)porch\.com$/, profile: /\/[a-z-]+\/[a-z-]+\/[a-z0-9-]+\/pp$|\/pro\// },
   { key: 'buildzoom', host: /(^|\.)buildzoom\.com$/, profile: /\/contractor\// },
   { key: 'nextdoor', host: /(^|\.)nextdoor\.com$/, profile: /\/pages\// },
-  { key: 'facebook', host: /(^|\.)facebook\.com$/, profile: /^\/(?!search|groups|events|marketplace|people|pages\/category|login|public)[A-Za-z0-9.]+\/?$|\/pages\/[^/]+\/\d+/ },
+  { key: 'facebook', host: /(^|\.)facebook\.com$/, profile: /^\/(?!search|groups|events|marketplace|people|pages\/category|login|public)[A-Za-z0-9.]+\/?$|\/pages\/[^/]+\/\d+|^\/p\/[^/]+-\d+\/?$|^\/people\/[^/]+\/\d+\/?$|^\/profile\.php\?id=\d+/ },
   { key: 'mapquest', host: /(^|\.)mapquest\.com$/, profile: /\/us\/[a-z-]+\/[a-z0-9-]+-\d+$/ },
   { key: 'manta', host: /(^|\.)manta\.com$/, profile: /\/c\// },
   { key: 'superpages', host: /(^|\.)superpages\.com$/, profile: /\/bp\// },

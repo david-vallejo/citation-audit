@@ -1,13 +1,15 @@
 import { config } from '../config.js';
 import { all, get, insert, uuid, now, getPrevious, getLocations } from '../db.js';
+import { fetchWithTimeout } from '../fetch/page.js';
 import { normalizeUrl, unwrapUrl, normUrlHost, normPhone, parseAddress } from '../compare/normalize.js';
 import { classifyUrl, PRIORITY_KEYS, PRIORITY_SITES } from './directories.js';
 import * as ddg from './providers/ddg.js';
+import * as ddgProxy from './providers/ddg-proxy.js';
 import * as cse from './providers/google-cse.js';
 import * as serp from './providers/serpapi.js';
 import * as serpGoogle from './providers/scraperapi-google.js';
 
-const PROVIDERS = { 'scraperapi-google': serpGoogle, ddg, 'google-cse': cse, serpapi: serp };
+const PROVIDERS = { 'ddg-proxy': ddgProxy, 'scraperapi-google': serpGoogle, ddg, 'google-cse': cse, serpapi: serp };
 
 const phoneQuery = p => `"${p.slice(0, 3)}-${p.slice(3, 6)}-${p.slice(6)}" OR "(${p.slice(0, 3)}) ${p.slice(3, 6)}-${p.slice(6)}"`;
 
@@ -99,9 +101,14 @@ export async function discover(client, canonical, { provider = config.discoveryP
   // Google Cloud setup. Put that first unless the chain names it already, so an older
   // DISCOVERY_PROVIDER value in the host's environment does not have to be edited.
   if (serpGoogle.available() && !chain.includes('scraperapi-google')) chain = ['scraperapi-google', ...chain];
-  for (const name of chain) if (!PROVIDERS[name]) throw new Error(`Unknown discovery provider "${name}" (scraperapi-google | google-cse | ddg | serpapi)`);
-  log(`Discovery providers, in order: ${chain.join(' → ')}`);
+  // Google's result links are now google.com/goto pages that no longer redirect, so most of
+  // its results cannot be read back. DuckDuckGo through the same key returns real links for
+  // about a credit a search, so it leads; Google still adds what it can on the open searches.
+  if (ddgProxy.available() && !chain.includes('ddg-proxy')) chain = ['ddg-proxy', ...chain];
+  for (const name of chain) if (!PROVIDERS[name]) throw new Error(`Unknown discovery provider "${name}" (ddg-proxy | scraperapi-google | google-cse | ddg | serpapi)`);
   let idx = 0;
+  const alsoGoogle = query => serpGoogle.available() && chain[idx] !== 'scraperapi-google' && !/\bsite:/.test(query);
+  log(`Discovery providers, in order: ${chain.join(' → ')}${serpGoogle.available() && chain[0] !== 'scraperapi-google' ? ' (plus Google on open searches)' : ''}`);
   const current = () => chain[idx];
   const clientHost = normUrlHost(client.website || canonical.website?.value);
   const phone = canonical.phone?.value ? normPhone(canonical.phone.value) : null;
@@ -152,6 +159,10 @@ export async function discover(client, canonical, { provider = config.discoveryP
     }
     if (results === 'stop') { log('  all discovery providers failed; stopping (inventory so far is kept)'); break; }
     if (results === false) { skipped++; log(`  skipped after repeated errors: ${query}`); continue; }
+    if (alsoGoogle(query)) {
+      try { const more = await serpGoogle.search(query); const have = new Set(results.map(r => unwrapUrl(r.url))); results = [...results, ...more.filter(r => !have.has(unwrapUrl(r.url)))]; }
+      catch (e) { log(`  ! scraperapi-google: ${e.message.slice(0, 160)}`); }
+    }
     let newHere = 0;
     for (const r of results) {
       seen++;
@@ -167,7 +178,27 @@ export async function discover(client, canonical, { provider = config.discoveryP
     log(`  ${query}  →  ${results.length} results, ${newHere} new`);
   }
   if (skipped) log(`  ${skipped} search(es) skipped after repeated errors`);
+  added += await ownSiteLinks(client, canonical, clientHost, log);
   return { queries: queries.length, seen, added, skipped, provider: current() };
+}
+
+// The business's own website links to its Facebook, Yelp, BBB and other profiles. Those links
+// are certain to be the business, and some of them never surface in any search.
+async function ownSiteLinks(client, canonical, clientHost, log) {
+  const site = client.website || canonical.website?.value;
+  if (!site) return 0;
+  let html = '';
+  try { const res = await fetchWithTimeout(site); html = await res.text(); }
+  catch (e) { log(`  ! could not read ${site} for profile links: ${e.message.slice(0, 120)}`); return 0; }
+  let added = 0;
+  for (const m of html.matchAll(/href=["'](https?:\/\/[^"'#\s]+)["']/gi)) {
+    const url = m[1].replace(/&amp;/g, '&');
+    const c = classifyUrl(url, clientHost);
+    if (!c || c.kind !== 'profile') continue;
+    const { created } = addCitation(client.id, url, c.directory, 'own-site', { notes: 'Linked from the business website' });
+    if (created) { added++; log(`  + ${c.directory}: ${url} (linked from the website)`); }
+  }
+  return added;
 }
 
 export function inventory(clientId) {
