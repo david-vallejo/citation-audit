@@ -3,6 +3,7 @@ import { all, get, insert, uuid, now, getPrevious, getLocations } from '../db.js
 import { fetchWithTimeout } from '../fetch/page.js';
 import { normalizeUrl, unwrapUrl, normUrlHost, normPhone, parseAddress } from '../compare/normalize.js';
 import { classifyUrl, PRIORITY_KEYS, PRIORITY_SITES } from './directories.js';
+import { STATES, normState } from '../compare/states.js';
 import * as ddg from './providers/ddg.js';
 import * as ddgProxy from './providers/ddg-proxy.js';
 import * as cse from './providers/google-cse.js';
@@ -139,6 +140,33 @@ export async function discover(client, canonical, { provider = config.discoveryP
     if (distinctive.length) return distinctive.some(t => strong.includes(t));
     return strong.includes(namePhrase);
   };
+  // A common name ("Summit Fence") is shared by companies all over the country, and reading each
+  // of their pages costs a Claude call. A result whose title or address line places it in a state
+  // the business has never been in, without the business's phone, is one of those namesakes.
+  const homeStates = new Set([addrVal && (typeof addrVal === 'object' ? addrVal.state : parseAddress(addrVal)?.state), ...[...getPrevious(client).addresses, ...getLocations(client).addresses].map(a => parseAddress(a)?.state)].map(normState).filter(Boolean));
+  const stateNames = Object.keys(STATES);
+  const statesIn = r => {
+    const found = new Set();
+    for (const m of `${r.title} ${r.snippet}`.matchAll(/,\s*([A-Z]{2})\s+\d{5}\b|,\s*([A-Z]{2})\b(?=\s*(?:$|[-|·—]))/g)) { const c = (m[1] || m[2]).toLowerCase(); if (Object.values(STATES).includes(c)) found.add(c); }
+    const title = r.title.toLowerCase();
+    for (const n of stateNames) if (new RegExp(`,\\s*${n}\\b`).test(title)) found.add(STATES[n]);
+    return found;
+  };
+  const elsewhere = r => {
+    if (!homeStates.size) return false;
+    const digits = `${r.title} ${r.snippet} ${r.url}`.replace(/\D/g, '');
+    if ((phone && digits.includes(phone)) || oldPhones.some(p => digits.includes(p))) return false;
+    const found = statesIn(r);
+    return found.size > 0 && ![...found].some(s => homeStates.has(s));
+  };
+  // Outside the known directories, a page counts only when it shows the business's phone or
+  // street. Otherwise every namesake company's own website comes back on a name search.
+  const streets = [addrVal && (typeof addrVal === 'object' ? addrVal.street : parseAddress(addrVal)?.street), ...getPrevious(client).addresses.map(a => parseAddress(a)?.street)].filter(Boolean).map(s => s.toLowerCase().split(/\s+/).slice(0, 2).join(' '));
+  const towns = [addrVal && (typeof addrVal === 'object' ? addrVal.city : parseAddress(addrVal)?.city), ...[...getPrevious(client).addresses, ...getLocations(client).addresses].map(a => parseAddress(a)?.city)].filter(Boolean).map(t => t.toLowerCase().replace(/[^a-z ]/g, ''));
+  const showsNap = r => {
+    const text = `${r.title} ${r.snippet}`.toLowerCase(), digits = text.replace(/\D/g, '');
+    return Boolean((phone && digits.includes(phone)) || oldPhones.some(p => digits.includes(p)) || streets.some(s => text.includes(s)) || towns.some(t => new RegExp(`\\b${t}\\b`).test(text)));
+  };
   const queries = [...new Set(buildQueries(canonical, client, { full }))].slice(0, maxQueries);
   let added = 0, seen = 0, failedInARow = 0, skipped = 0;
   // One bad response must not end the sweep. Retry a query that failed for a passing reason,
@@ -170,6 +198,8 @@ export async function discover(client, canonical, { provider = config.discoveryP
       const c = classifyUrl(r.url, clientHost);
       if (!c || c.kind === 'own-site' || c.kind === 'noise' || c.kind === 'directory-nonprofile') continue;
       if (!matchesBusiness(r)) { log(`  · not this business: ${r.url}`); continue; }
+      if (elsewhere(r)) { log(`  · same name, another state: ${r.url}`); continue; }
+      if (c.kind === 'other' && !showsNap(r)) { log(`  · names the business but shows none of its details: ${r.url}`); continue; }
       const { created } = addCitation(client.id, r.url, c.directory, provider, { notes: c.kind === 'other' ? 'Not one of the known directories; kept because its title or address names the business' : null, snippet: [r.title, r.snippet].filter(Boolean).join(' — ') });
       if (created) { newHere++; log(`  + ${c.directory}: ${r.url}`); }
     }

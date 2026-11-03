@@ -88,6 +88,11 @@ async function auditOne(run, client, canonical, target, citation, log) {
       snapshot.extracted_json = JSON.stringify(data); snapshot.extraction_confidence = data.confidence;
       const oldInfo = matchesPreviousPhone(target.previous, data.phone) || matchesPreviousAddress(target.previous, data.address)
         || matchesPreviousPhone(target.locations, data.phone) || matchesPreviousAddress(target.locations, data.address);
+      // Another company with the same name and its own phone number. Set it aside so later runs
+      // do not pay to read it again; it stays in the inventory and can be reactivated by hand.
+      if (data.page_kind === 'other_business' && normPhone(data.phone) && normPhone(data.phone) !== normPhone(canonical.phone?.value) && !oldInfo) {
+        update('citations', citation.id, { status: 'not_client', notes: `Set aside automatically: a different business (${[data.name, fmtPhone(data.phone)].filter(Boolean).join(', ')})` });
+      }
       if (!data.is_profile_page && data.confidence < 0.5 && !oldInfo) {
         findings = unverifiedAll(`Page is not a single-business profile (${data.notes || 'no matching listing found'})`, canonical);
       } else {

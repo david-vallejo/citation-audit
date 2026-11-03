@@ -1,6 +1,7 @@
 import { all, getCanonical, getPrevious, getLocations } from '../db.js';
 import { effectiveFindings } from '../audit.js';
 import * as N from '../compare/normalize.js';
+import { STATES, normState } from '../compare/states.js';
 import { displayCanonical, comparePhone, compareWebsite } from '../compare/classify.js';
 
 // Turns one audit run into the client deliverable: every real listing with a plain-English
@@ -74,8 +75,6 @@ function addressParts(a) {
   if (!p.city && p.street && !/\d/.test(p.street)) return { ...p, city: p.street, street: '' };
   return p;
 }
-const STATES = { alabama: 'al', alaska: 'ak', arizona: 'az', arkansas: 'ar', california: 'ca', colorado: 'co', connecticut: 'ct', delaware: 'de', florida: 'fl', georgia: 'ga', hawaii: 'hi', idaho: 'id', illinois: 'il', indiana: 'in', iowa: 'ia', kansas: 'ks', kentucky: 'ky', louisiana: 'la', maine: 'me', maryland: 'md', massachusetts: 'ma', michigan: 'mi', minnesota: 'mn', mississippi: 'ms', missouri: 'mo', montana: 'mt', nebraska: 'ne', nevada: 'nv', 'new hampshire': 'nh', 'new jersey': 'nj', 'new mexico': 'nm', 'new york': 'ny', 'north carolina': 'nc', 'north dakota': 'nd', ohio: 'oh', oklahoma: 'ok', oregon: 'or', pennsylvania: 'pa', 'rhode island': 'ri', 'south carolina': 'sc', 'south dakota': 'sd', tennessee: 'tn', texas: 'tx', utah: 'ut', vermont: 'vt', virginia: 'va', washington: 'wa', 'west virginia': 'wv', wisconsin: 'wi', wyoming: 'wy' };
-const normState = s => { const c = N.clean(s || ''); return STATES[c] || c; };
 
 function note(f, ctx) {
   const found = f.found || '(blank)';
