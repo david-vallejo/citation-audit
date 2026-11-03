@@ -192,7 +192,7 @@ export function buildListings(run, client) {
       if (f.field === 'phone' && !knownPhones.has(N.normPhone(f.found))) return { type: 'phone', key: N.normPhone(f.found) ? N.fmtPhone(f.found) : f.found };
       if (f.field === 'address') {
         const x = addressParts(f.found), cAddr = addressParts(f.expected);
-        if (x?.city && cAddr?.city && N.clean(x.city) !== N.clean(cAddr.city)) return { type: 'other_city', key: [x.city, (x.state || '').toUpperCase()].filter(Boolean).join(', ') };
+        if (x?.city && cAddr?.city && N.clean(x.city) !== N.clean(cAddr.city)) return { type: 'other_city', key: [x.city, normState(x.state).toUpperCase()].filter(Boolean).join(', ') };
         return { type: 'address' };
       }
       if (f.field === 'website') return { type: 'website' };
@@ -218,10 +218,13 @@ export function buildListings(run, client) {
 
   // Two listings on one directory for the same business: one of them should go.
   // A page nobody could read is not known to be the business, so it is never called a duplicate.
+  // BBB shows each extra address of one profile at its own /addressId/ URL; that is one listing, not a duplicate.
+  const bbbExtra = l => l.directory === 'bbb' && /\/addressId\/\d+/.test(l.url);
+  for (const l of listings) if (bbbExtra(l) && l.status === FIX) l.notes = `The business's BBB profile still lists ${l.address || 'an old address'} as an extra location. Remove that location from the profile.`;
   const perSite = new Map();
-  for (const l of listings) if (l.status !== WRONG_LOCATION && l.status !== CHECK && DIRECTORY_LABELS[l.directory]) perSite.set(l.site, (perSite.get(l.site) || 0) + 1);
+  for (const l of listings) if (l.status !== WRONG_LOCATION && l.status !== CHECK && !bbbExtra(l) && DIRECTORY_LABELS[l.directory]) perSite.set(l.site, (perSite.get(l.site) || 0) + 1);
   for (const l of listings) {
-    const n = perSite.get(l.site);
+    const n = bbbExtra(l) ? 1 : perSite.get(l.site);
     if (n > 1 && l.status !== WRONG_LOCATION && l.status !== CHECK && !closing) l.notes = `${l.notes ? l.notes + ' ' : ''}One of ${n} listings on ${l.site}; merge the duplicates or remove the extra.`.trim();
   }
   if (!closing) {
