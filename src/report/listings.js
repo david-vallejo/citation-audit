@@ -163,6 +163,7 @@ export function buildListings(run, client) {
     if (kind === 'other_business') { excluded.push({ url: c.url, why: 'a different business' }); continue; }
     // Same name, but its own phone in a state the client has never been in: a namesake company.
     if (N.normPhone(data?.phone) && !phoneIsClient && st && okStates.size && !okStates.has(st)) { excluded.push({ url: c.url, why: 'a different business with the same name' }); continue; }
+    if (kind === 'mention' && !directory && /does not mention|contains no information matching|no information (about|matching)|not the target business|neither appears to be/i.test(data?.notes || '')) { excluded.push({ url: c.url, why: 'does not mention the business' }); continue; }
     if (kind === 'mention' && !directory) { mentions.push({ site, url: c.url, what: (data?.notes || cur.search_snippet || '').split(/(?<=\.)\s/)[0].slice(0, 220) }); continue; }
 
     // Re-check phone and website with today's rules, so an older run's hidden phone or
@@ -204,11 +205,12 @@ export function buildListings(run, client) {
   listings.splice(0, listings.length, ...best.values());
 
   // Two listings on one directory for the same business: one of them should go.
+  // A page nobody could read is not known to be the business, so it is never called a duplicate.
   const perSite = new Map();
-  for (const l of listings) if (l.status !== WRONG_LOCATION && DIRECTORY_LABELS[l.directory]) perSite.set(l.site, (perSite.get(l.site) || 0) + 1);
+  for (const l of listings) if (l.status !== WRONG_LOCATION && l.status !== CHECK && DIRECTORY_LABELS[l.directory]) perSite.set(l.site, (perSite.get(l.site) || 0) + 1);
   for (const l of listings) {
     const n = perSite.get(l.site);
-    if (n > 1 && l.status !== WRONG_LOCATION && !closing) l.notes = `${l.notes ? l.notes + ' ' : ''}One of ${n} listings on ${l.site}; merge the duplicates or remove the extra.`.trim();
+    if (n > 1 && l.status !== WRONG_LOCATION && l.status !== CHECK && !closing) l.notes = `${l.notes ? l.notes + ' ' : ''}One of ${n} listings on ${l.site}; merge the duplicates or remove the extra.`.trim();
   }
   const order = closing ? CLOSING_ORDER : STATUS_ORDER;
   listings.sort((a, b) => order.indexOf(a.status) - order.indexOf(b.status) || a.site.localeCompare(b.site));
