@@ -32,6 +32,15 @@ export async function search(query, { limit = 10 } = {}) {
   try { j = JSON.parse(text); } catch { throw new Error(`scraperapi-google ${res.status}: ${text.slice(0, 120)}`); }
   if (!res.ok || j.error) throw new Error(`scraperapi-google ${res.status}: ${j.error || 'error'}`);
   const rows = j.organic_results || [];
-  const out = await mapLimit(rows, 4, async r => ({ url: await resolve(r.link), title: r.title || '', snippet: r.snippet || '' }));
-  return out.filter(r => r.url);
+  return mapLimit(rows, 4, async r => ({ url: await resolve(r.link), host: displayedHost(r.displayed_link), path: displayedPath(r.displayed_link), title: r.title || '', snippet: r.snippet || '' }));
+}
+
+// When a goto wrapper will not resolve, Google's display line ("https://www.yelp.com › biz › fi...")
+// still names the site. discover() uses it to look the listing up on that site directly.
+function displayedHost(d) {
+  const m = String(d || '').match(/^(?:https?:\/\/)?([a-z0-9.-]+\.[a-z]{2,})/i);
+  return m ? m[1].toLowerCase().replace(/^www\./, '') : null;
+}
+function displayedPath(d) {
+  return String(d || '').split('›').slice(1).map(s => s.trim().replace(/\.{3}$/, '')).filter(Boolean).join('/');
 }

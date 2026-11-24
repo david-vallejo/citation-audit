@@ -102,15 +102,16 @@ export async function discover(client, canonical, { provider = config.discoveryP
   // Google Cloud setup. Put that first unless the chain names it already, so an older
   // DISCOVERY_PROVIDER value in the host's environment does not have to be edited.
   if (serpGoogle.available() && !chain.includes('scraperapi-google')) chain = ['scraperapi-google', ...chain];
-  // Google's result links are now google.com/goto pages that no longer redirect, so most of
-  // its results cannot be read back. DuckDuckGo through the same key returns real links for
-  // about a credit a search, so it leads; Google, at 25 credits a search, is only asked an
-  // open search that DuckDuckGo had nothing for.
+  // DuckDuckGo through the same key returns real links for about a credit a search, so it leads.
+  // It also misses listings Google has (Fitzgerald, Nov 2026: Yelp, the local chamber, a second
+  // MapQuest listing and more), so every search is asked of Google too. Google's links are
+  // google.com/goto pages that often will not resolve; for those, the site named in Google's
+  // display line is searched directly afterwards, which returns the real listing URL.
   if (ddgProxy.available() && !chain.includes('ddg-proxy')) chain = ['ddg-proxy', ...chain];
   for (const name of chain) if (!PROVIDERS[name]) throw new Error(`Unknown discovery provider "${name}" (ddg-proxy | scraperapi-google | google-cse | ddg | serpapi)`);
   let idx = 0;
-  const alsoGoogle = query => serpGoogle.available() && chain[idx] !== 'scraperapi-google' && !/\bsite:/.test(query);
-  log(`Discovery providers, in order: ${chain.join(' → ')}${serpGoogle.available() && chain[0] !== 'scraperapi-google' ? ' (Google backs up open searches that come back empty)' : ''}`);
+  const alsoGoogle = () => serpGoogle.available() && chain[idx] !== 'scraperapi-google';
+  log(`Discovery providers, in order: ${chain.join(' → ')}${serpGoogle.available() && chain[0] !== 'scraperapi-google' ? ' (every search is also run on Google)' : ''}`);
   const current = () => chain[idx];
   const clientHost = normUrlHost(client.website || canonical.website?.value);
   const phone = canonical.phone?.value ? normPhone(canonical.phone.value) : null;
@@ -170,6 +171,23 @@ export async function discover(client, canonical, { provider = config.discoveryP
   };
   const queries = [...new Set(buildQueries(canonical, client, { full }))].slice(0, maxQueries);
   let added = 0, seen = 0, failedInARow = 0, skipped = 0;
+  const pendingHosts = new Set();
+  const take = (results, via) => {
+    let n = 0;
+    for (const r of results) {
+      if (!r.url) continue;
+      seen++;
+      r.url = unwrapUrl(r.url);
+      const c = classifyUrl(r.url, clientHost);
+      if (!c || c.kind === 'own-site' || c.kind === 'noise' || c.kind === 'directory-nonprofile') continue;
+      if (!matchesBusiness(r)) { log(`  · not this business: ${r.url}`); continue; }
+      if (elsewhere(r)) { log(`  · same name, another state: ${r.url}`); continue; }
+      if (c.kind === 'other' && !showsNap(r)) { log(`  · names the business but shows none of its details: ${r.url}`); continue; }
+      const { created } = addCitation(client.id, r.url, c.directory, via, { notes: c.kind === 'other' ? 'Not one of the known directories; kept because its title or address names the business' : null, snippet: [r.title, r.snippet].filter(Boolean).join(' — ') });
+      if (created) { n++; log(`  + ${c.directory}: ${r.url}`); }
+    }
+    return n;
+  };
   // One bad response must not end the sweep. Retry a query that failed for a passing reason,
   // skip it if it keeps failing, and only give up on a provider after several queries in a row fail.
   const passing = e => /\b(429|5\d\d)\b|timeout|timed out|fetch failed|ECONNRESET/i.test(e.message);
@@ -188,27 +206,42 @@ export async function discover(client, canonical, { provider = config.discoveryP
     }
     if (results === 'stop') { log('  all discovery providers failed; stopping (inventory so far is kept)'); break; }
     if (results === false) { skipped++; log(`  skipped after repeated errors: ${query}`); continue; }
-    if (!results.length && alsoGoogle(query)) {
-      try { const more = await serpGoogle.search(query); const have = new Set(results.map(r => unwrapUrl(r.url))); results = [...results, ...more.filter(r => !have.has(unwrapUrl(r.url)))]; }
-      catch (e) { log(`  ! scraperapi-google: ${e.message.slice(0, 160)}`); }
+    let googleCount = 0;
+    if (alsoGoogle()) {
+      try {
+        const more = await serpGoogle.search(query);
+        googleCount = more.length;
+        const have = new Set(results.map(r => unwrapUrl(r.url)));
+        for (const r of more) {
+          if (r.url) { if (!have.has(unwrapUrl(r.url))) { results.push(r); have.add(unwrapUrl(r.url)); } continue; }
+          if (!r.host || pendingHosts.has(r.host)) continue;
+          const probe = { title: r.title, snippet: r.snippet, url: `https://${r.host}/${r.path}` };
+          const c = classifyUrl(`https://${r.host}/`, clientHost);
+          if (!c || c.kind === 'own-site' || c.kind === 'noise') continue;
+          if (matchesBusiness(probe) && !elsewhere(probe)) pendingHosts.add(r.host);
+        }
+      } catch (e) { log(`  ! scraperapi-google: ${e.message.slice(0, 160)}`); }
     }
-    let newHere = 0;
-    for (const r of results) {
-      seen++;
-      r.url = unwrapUrl(r.url);
-      const c = classifyUrl(r.url, clientHost);
-      if (!c || c.kind === 'own-site' || c.kind === 'noise' || c.kind === 'directory-nonprofile') continue;
-      if (!matchesBusiness(r)) { log(`  · not this business: ${r.url}`); continue; }
-      if (elsewhere(r)) { log(`  · same name, another state: ${r.url}`); continue; }
-      if (c.kind === 'other' && !showsNap(r)) { log(`  · names the business but shows none of its details: ${r.url}`); continue; }
-      const { created } = addCitation(client.id, r.url, c.directory, provider, { notes: c.kind === 'other' ? 'Not one of the known directories; kept because its title or address names the business' : null, snippet: [r.title, r.snippet].filter(Boolean).join(' — ') });
-      if (created) { newHere++; log(`  + ${c.directory}: ${r.url}`); }
-    }
+    const newHere = take(results, provider);
     added += newHere;
     insert('discovery_log', { id: uuid(), client_id: client.id, provider, query, results_count: results.length, new_citations: newHere, ran_at: now() });
-    log(`  ${query}  →  ${results.length} results, ${newHere} new`);
+    log(`  ${query}  →  ${results.length} results${googleCount ? ` (Google ${googleCount})` : ''}, ${newHere} new`);
   }
   if (skipped) log(`  ${skipped} search(es) skipped after repeated errors`);
+  // Sites Google listed the business on, but whose links Google would not hand over.
+  if (pendingHosts.size && ddgProxy.available()) {
+    const short = (canonical.name?.value || client.name).replace(/,?\s+(inc|llc|co|corp|ltd)\.?$/i, '').trim();
+    log(`Looking up ${pendingHosts.size} site(s) Google found the business on: ${[...pendingHosts].join(', ')}`);
+    for (const host of pendingHosts) {
+      const query = `site:${host} "${short}"`;
+      let results;
+      try { results = await ddgProxy.search(query); } catch (e) { log(`  ! ddg-proxy: ${e.message.slice(0, 160)}`); continue; }
+      const newHere = take(results, 'google+ddg-proxy');
+      added += newHere;
+      insert('discovery_log', { id: uuid(), client_id: client.id, provider: 'google+ddg-proxy', query, results_count: results.length, new_citations: newHere, ran_at: now() });
+      log(`  ${query}  →  ${results.length} results, ${newHere} new`);
+    }
+  }
   added += await ownSiteLinks(client, canonical, clientHost, log);
   return { queries: queries.length, seen, added, skipped, provider: current() };
 }
